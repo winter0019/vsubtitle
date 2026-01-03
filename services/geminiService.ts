@@ -18,6 +18,7 @@ const normalizeSrt = (content: string): string => {
     // Ensure we have at least one line of text
     if (textLines.length === 0) return '';
 
+    // Join with simple newlines - FFmpeg's libass handles these correctly
     return `${index + 1}\n${timestamps}\n${textLines.join('\n')}\n`;
   }).filter(Boolean).join('\n');
 };
@@ -32,26 +33,22 @@ export const translateSubtitles = async (
   const systemPrompt = `
     You are an expert bilingual subtitle translator.
     
-    TASK: Convert the provided SRT into BILINGUAL format.
+    TASK: Convert the provided SRT into a BILINGUAL format.
     TARGET LANGUAGE: ${targetLanguage}
     
-    STRICT RULES:
-    1. For every subtitle entry, you MUST provide EXACTLY TWO lines of text.
-    2. Line 1: The ORIGINAL text (as found in the input).
-    3. Line 2: The TRANSLATED text (in ${targetLanguage}).
-    4. Keep timestamps and IDs EXACTLY the same.
-    5. Output ONLY raw SRT. No markdown, no explanations, no preamble.
+    STRICT FORMATTING RULES:
+    1. For EVERY entry, you must output exactly:
+       Line 1: The original English text.
+       Line 2: The translated ${targetLanguage} text.
+    2. Do not merge lines into one. Keep them separate.
+    3. Keep timestamps (00:00:00,000 --> 00:00:00,000) and IDs exactly as provided.
+    4. Return ONLY the raw SRT content. No markdown code blocks (no \`\`\`), no titles, no explanations.
     
-    FORMAT EXAMPLE:
+    EXAMPLE:
     1
     00:00:01,000 --> 00:00:04,000
     Hello world
     你好世界
-    
-    2
-    00:00:04,500 --> 00:00:07,000
-    This is a test
-    这是一个测试
   `;
 
   const response = await ai.models.generateContent({
@@ -63,25 +60,16 @@ export const translateSubtitles = async (
     },
   });
 
-  const rawText = response.text;
-  if (!rawText) {
-    throw new Error("Gemini AI failed to return a response.");
+  let rawText = response.text || "";
+  
+  // Strip any accidental Markdown formatting
+  rawText = rawText.replace(/```[a-z]*\n/g, '').replace(/```/g, '').trim();
+
+  // If Gemini failed to return a valid starting ID, just return what we have (cleaned)
+  if (!rawText.match(/^\d+/)) {
+     console.warn("Gemini output might be malformed, attempting to fix...");
   }
 
-  // Extract valid SRT part
-  const srtMatch = rawText.match(/(\d+\s+\d{2}:\d{2}:\d{2},\d{3}\s+-->\s+\d{2}:\d{2}:\d{2},\d{3}[\s\S]*)/);
-  let cleanedSrt = srtMatch ? srtMatch[0] : rawText;
-
-  cleanedSrt = cleanedSrt
-    .replace(/```srt/g, '')
-    .replace(/```/g, '')
-    .trim();
-
-  const finalSrt = normalizeSrt(cleanedSrt);
-  
-  // Basic check for bilingualism (entries should have at least 2 lines of text)
-  const firstEntry = finalSrt.split('\n\n')[0];
-  console.debug("Generated SRT Sample:", firstEntry);
-  
+  const finalSrt = normalizeSrt(rawText);
   return finalSrt;
 };

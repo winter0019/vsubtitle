@@ -44,69 +44,76 @@ export const mergeVideoAndSubtitles = async (
   });
 
   // 1. Setup Virtual File System
-  onLog('Preparing virtual environment...');
+  onLog('Preparing virtual workspace...');
   const videoData = await fetchFile(videoFile);
   await ffmpegInstance.writeFile('input.mp4', videoData);
   
-  // Clean SRT: Remove BOM, normalize line endings, ensure UTF-8 encoding
-  const cleanSrt = srtContent.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // Clean SRT: Remove BOM, normalize line endings, and ensure it's not empty
+  const cleanSrt = srtContent
+    .replace(/^\uFEFF/, '') 
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim() + '\n\n';
+    
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(cleanSrt));
-  
-  // 2. Load CJK Font (Noto Sans SC)
-  // This matches the Noto Sans SC font shown in your local directory
+  onLog(`SRT file written (${cleanSrt.length} bytes)`);
+
+  // 2. Load CJK Font
+  // We use Noto Sans SC to ensure Chinese characters render correctly.
   const fontUrl = 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf';
   
-  onLog('Downloading Noto Sans SC (Simplified Chinese) font...');
+  onLog('Loading Noto Sans SC font for CJK support...');
   try {
     const fontResponse = await fetch(fontUrl);
-    if (fontResponse.ok) {
-      const fontBuffer = await fontResponse.arrayBuffer();
-      
-      // Create a dedicated fonts directory to prevent libass from scanning input.mp4 as a font
-      try { await ffmpegInstance.createDir('/fonts'); } catch(e) {}
-      await ffmpegInstance.writeFile('/fonts/noto.ttf', new Uint8Array(fontBuffer));
-      onLog('Font correctly isolated in /fonts/noto.ttf');
-    }
+    if (!fontResponse.ok) throw new Error('Font download failed');
+    const fontBuffer = await fontResponse.arrayBuffer();
+    
+    // We create a specific path for the font to help libass find it
+    await ffmpegInstance.writeFile('noto.ttf', new Uint8Array(fontBuffer));
+    onLog('Font loaded: noto.ttf');
   } catch (e) {
-    onLog(`Warning: Font error (${(e as Error).message}). Subtitles may appear as boxes.`);
+    onLog(`Warning: Font loading failed: ${(e as Error).message}. CJK characters may not appear.`);
   }
 
-  // 3. Execute Command
-  onLog('Hardcoding subtitles into video stream...');
+  // 3. Execute Hardcoding Command
+  onLog('Baking subtitles... This process is CPU intensive.');
   
   try {
     /**
-     * Optimized Filter Configuration:
-     * - 'fontsdir=/fonts': Directs libass to the isolated font folder.
-     * - 'Fontname=Noto Sans SC': Internal name of the font we just saved.
-     * - 'MarginV=30': Positions subtitles slightly higher for better readability.
+     * Filter Breakdown:
+     * - subtitles=subs.srt: Source SRT file.
+     * - fontsdir=.: Tells libass to look in the current directory for fonts.
+     * - force_style:
+     *    - Fontname=Noto Sans SC: Matches the internal name of our noto.ttf.
+     *    - Fontsize=24: Increased for better visibility.
+     *    - Alignment=2: Bottom-center.
      */
-    const filter = "subtitles=subs.srt:fontsdir=/fonts:force_style='Fontname=Noto Sans SC,Fontsize=22,MarginV=30,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'";
+    const filter = "subtitles=subs.srt:fontsdir=.:force_style='Fontname=Noto Sans SC,Fontsize=24,MarginV=25,Outline=1.5,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'";
     
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
       '-vf', filter,
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
-      '-crf', '26',
-      '-c:a', 'copy', // Pass-through original audio for maximum speed
+      '-crf', '24',           // Slightly better quality than 26
+      '-c:a', 'copy',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       'output.mp4'
     ]);
   } catch (err: any) {
-    onLog(`FFmpeg Execution Failed: ${err.message}`);
+    onLog(`FFmpeg Error: ${err.message}`);
     throw err;
   }
 
-  onLog('Render complete. Fetching video data...');
+  onLog('Rendering complete. Preparing download...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
-  // Virtual FS Cleanup
+  // Cleanup to free up browser memory
   try {
     await ffmpegInstance.deleteFile('input.mp4');
     await ffmpegInstance.deleteFile('subs.srt');
-    try { await ffmpegInstance.deleteFile('/fonts/noto.ttf'); } catch(e) {}
+    await ffmpegInstance.deleteFile('noto.ttf');
     await ffmpegInstance.deleteFile('output.mp4');
   } catch (e) {}
 
