@@ -6,7 +6,6 @@ let ffmpeg: FFmpeg | null = null;
 
 /**
  * Initializes and returns the FFmpeg instance.
- * Uses consistent versioning for core and wasm.
  */
 export const getFFmpeg = async (onLog?: (msg: string) => void) => {
   if (ffmpeg) return ffmpeg;
@@ -15,7 +14,7 @@ export const getFFmpeg = async (onLog?: (msg: string) => void) => {
   
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
   
-  onLog?.('Loading FFmpeg core components...');
+  onLog?.('Initializing FFmpeg (WASM engine)...');
   await ffmpeg.load({
     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
@@ -26,7 +25,6 @@ export const getFFmpeg = async (onLog?: (msg: string) => void) => {
 
 /**
  * Merges video and subtitles. 
- * Improved with specific font mapping and smaller chunk processing for browser stability.
  */
 export const mergeVideoAndSubtitles = async (
   videoFile: File,
@@ -38,59 +36,65 @@ export const mergeVideoAndSubtitles = async (
 
   ffmpegInstance.on('log', ({ message }) => {
     onLog(message);
-    console.debug('[FFmpeg Native Log]', message);
+    console.debug('[FFmpeg]', message);
   });
 
   ffmpegInstance.on('progress', ({ progress }) => {
-    // progress is 0-1
     onProgress(Math.round(progress * 100));
   });
 
   // 1. Setup Virtual File System
-  onLog('Preparing virtual file system...');
+  onLog('Writing files to memory...');
   const videoData = await fetchFile(videoFile);
   await ffmpegInstance.writeFile('input.mp4', videoData);
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(srtContent));
 
-  // 2. Load Font (Critical for 'subtitles' filter)
-  // We use a light version of Noto Sans to ensure speed and CJK support
+  // 2. Load Font with a timeout to prevent hanging
   const fontUrl = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@master/hinted/ttf/NotoSans/NotoSans-Regular.ttf';
-  onLog('Downloading font for rendering...');
+  onLog('Fetching font assets...');
   try {
-    const fontResponse = await fetch(fontUrl);
-    const fontBuffer = await fontResponse.arrayBuffer();
-    await ffmpegInstance.writeFile('font.ttf', new Uint8Array(fontBuffer));
-    onLog('Font loaded successfully.');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+    const fontResponse = await fetch(fontUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (fontResponse.ok) {
+      const fontBuffer = await fontResponse.arrayBuffer();
+      await ffmpegInstance.writeFile('font.ttf', new Uint8Array(fontBuffer));
+      onLog('Font assets ready.');
+    }
   } catch (e) {
-    onLog('Warning: Could not load web font. Rendering may use defaults.');
+    onLog('Font load skipped (using fallback).');
   }
 
   // 3. Execute Command
-  // We use the 'subtitles' filter with specific fontfile reference.
-  // This is the most reliable way in FFmpeg.wasm to ensure text is rendered.
-  onLog('Starting hardcoding process... This utilizes your CPU and may take several minutes.');
+  onLog('Starting hardcoding process... Please keep this tab active.');
   
   try {
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
       '-vf', "subtitles=subs.srt:fontsdir=/:fontfile=font.ttf:force_style='FontSize=20,MarginV=15,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
-      '-c:a', 'copy',      // Copy audio without re-encoding to save time
-      '-preset', 'ultrafast', // Speed over compression for browser environment
-      '-crf', '28',        // Decent quality balance
+      '-c:a', 'copy',      // Audio copy is instant
+      '-preset', 'ultrafast', // Most critical for browser usage
+      '-crf', '32',        // Higher CRF = Faster processing
       'output.mp4'
     ]);
   } catch (err: any) {
-    onLog(`FFmpeg Execution Error: ${err.message}`);
+    onLog(`FFmpeg Error: ${err.message}`);
     throw err;
   }
 
-  onLog('Finalizing output file...');
+  onLog('Reading final build...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
-  // Clean up to save memory
-  await ffmpegInstance.deleteFile('input.mp4');
-  await ffmpegInstance.deleteFile('subs.srt');
-  await ffmpegInstance.deleteFile('output.mp4');
+  // Clean up
+  try {
+    await ffmpegInstance.deleteFile('input.mp4');
+    await ffmpegInstance.deleteFile('subs.srt');
+    await ffmpegInstance.deleteFile('output.mp4');
+  } catch (e) {
+    console.warn('Cleanup failed.');
+  }
 
   return new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
 };
