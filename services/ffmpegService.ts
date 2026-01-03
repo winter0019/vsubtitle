@@ -44,81 +44,69 @@ export const mergeVideoAndSubtitles = async (
   });
 
   // 1. Setup Virtual File System
-  onLog('Preparing files in virtual environment...');
+  onLog('Preparing virtual environment...');
   const videoData = await fetchFile(videoFile);
   await ffmpegInstance.writeFile('input.mp4', videoData);
   
-  // Normalize line endings and ensure clean UTF-8 string
-  const normalizedSrt = srtContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  if (!normalizedSrt || normalizedSrt.length < 10) {
-    throw new Error("The subtitle content is empty or invalid.");
-  }
+  // Clean SRT: Remove BOM, normalize line endings, ensure UTF-8 encoding
+  const cleanSrt = srtContent.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(cleanSrt));
   
-  await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(normalizedSrt));
-  onLog(`SRT Ready. Length: ${normalizedSrt.length} chars.`);
-
-  // 2. Load CJK-Compatible Font into a dedicated directory
-  // We place it in /fonts to avoid libass scanning the root directory (which contains input.mp4)
+  // 2. Load CJK Font (Noto Sans SC)
+  // This matches the Noto Sans SC font shown in your local directory
   const fontUrl = 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf';
   
   onLog('Downloading Noto Sans SC (Simplified Chinese) font...');
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); 
-    const fontResponse = await fetch(fontUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
+    const fontResponse = await fetch(fontUrl);
     if (fontResponse.ok) {
       const fontBuffer = await fontResponse.arrayBuffer();
       
-      // Create dedicated fonts directory
-      await ffmpegInstance.createDir('/fonts');
+      // Create a dedicated fonts directory to prevent libass from scanning input.mp4 as a font
+      try { await ffmpegInstance.createDir('/fonts'); } catch(e) {}
       await ffmpegInstance.writeFile('/fonts/noto.ttf', new Uint8Array(fontBuffer));
-      onLog('Font /fonts/noto.ttf loaded and isolated.');
-    } else {
-      onLog('Warning: Font download failed. Using fallbacks.');
+      onLog('Font correctly isolated in /fonts/noto.ttf');
     }
   } catch (e) {
-    onLog(`Warning: Font loading error (${(e as Error).message}).`);
+    onLog(`Warning: Font error (${(e as Error).message}). Subtitles may appear as boxes.`);
   }
 
   // 3. Execute Command
-  onLog('Baking bilingual subtitles into video stream...');
+  onLog('Hardcoding subtitles into video stream...');
   
   try {
     /**
-     * libass filter in WASM configuration:
-     * - 'fontsdir=/fonts': Crucial! Points libass specifically to our isolated font folder.
-     * - 'FontName=Noto Sans SC': Internal metadata name for Noto Sans SC Regular.
-     * - 'FontSize=22': Sized for 1080p viewing.
+     * Optimized Filter Configuration:
+     * - 'fontsdir=/fonts': Directs libass to the isolated font folder.
+     * - 'Fontname=Noto Sans SC': Internal name of the font we just saved.
+     * - 'MarginV=30': Positions subtitles slightly higher for better readability.
      */
+    const filter = "subtitles=subs.srt:fontsdir=/fonts:force_style='Fontname=Noto Sans SC,Fontsize=22,MarginV=30,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'";
+    
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
-      '-vf', "subtitles=subs.srt:fontsdir=/fonts:force_style='FontName=Noto Sans SC,FontSize=22,MarginV=30,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
+      '-vf', filter,
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
-      '-crf', '26', // Higher quality than 28
-      '-c:a', 'copy', // Much faster, avoids re-encoding audio
+      '-crf', '26',
+      '-c:a', 'copy', // Pass-through original audio for maximum speed
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       'output.mp4'
     ]);
   } catch (err: any) {
-    onLog(`FFmpeg Execution Error: ${err.message}`);
+    onLog(`FFmpeg Execution Failed: ${err.message}`);
     throw err;
   }
 
-  onLog('Processing complete. Finalizing output.');
+  onLog('Render complete. Fetching video data...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
-  // Cleanup virtual files to free memory
+  // Virtual FS Cleanup
   try {
     await ffmpegInstance.deleteFile('input.mp4');
     await ffmpegInstance.deleteFile('subs.srt');
-    try { 
-        await ffmpegInstance.deleteFile('/fonts/noto.ttf'); 
-        // Note: deleteDir might not be supported in all builds, but deleting the file is enough
-    } catch (e) {}
+    try { await ffmpegInstance.deleteFile('/fonts/noto.ttf'); } catch(e) {}
     await ffmpegInstance.deleteFile('output.mp4');
   } catch (e) {}
 
