@@ -1,9 +1,9 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { ProcessingStatus, TranslationModel } from './types';
-import { translateSubtitles } from './services/geminiService';
-import { mergeVideoAndSubtitles } from './services/ffmpegService';
-import StepCard from './components/StepCard';
+import { ProcessingStatus, TranslationModel } from './types.ts';
+import { translateSubtitles } from './services/geminiService.ts';
+import { mergeVideoAndSubtitles } from './services/ffmpegService.ts';
+import StepCard from './components/StepCard.tsx';
 
 const App: React.FC = () => {
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -31,7 +31,7 @@ const App: React.FC = () => {
   }, [logs]);
 
   const addLog = (msg: string) => {
-    setLogs(prev => [...prev.slice(-100), msg]); // Keep last 100 lines for context
+    setLogs(prev => [...prev.slice(-100), msg]);
   };
 
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -61,16 +61,14 @@ const App: React.FC = () => {
     try {
       setResultVideoUrl(null);
       setLogs([]);
-      setShowLogs(true); // Auto-show logs for transparency during process
+      setShowLogs(true);
       
-      // Step 1: Translation
       setStatus({ step: 'translating', progress: 5, message: 'Gemini AI is crafting your bilingual subtitles...' });
       addLog('Connecting to Gemini API...');
       const bilingualSrt = await translateSubtitles(srtContent, targetLanguage);
       setSrtContent(bilingualSrt);
       addLog('Bilingual SRT generated successfully.');
 
-      // Step 2: Merging
       setStatus({ step: 'merging', progress: 0, message: 'Hardcoding subtitles into video. This stays in your browser!' });
       const mergedBlob = await mergeVideoAndSubtitles(
         videoFile, 
@@ -106,7 +104,6 @@ const App: React.FC = () => {
       </header>
 
       <div className="grid gap-6">
-        {/* STEP 1: PREP */}
         <StepCard
           number={1}
           title="Source Assets"
@@ -164,7 +161,6 @@ const App: React.FC = () => {
           </div>
         </StepCard>
 
-        {/* STEP 2: PROCESSING */}
         <StepCard
           number={2}
           title="AI Processing & Rendering"
@@ -201,7 +197,7 @@ const App: React.FC = () => {
                 Merge & Hardcode <i className="fas fa-magic"></i>
               </button>
             ) : (
-              <div className="space-y-4 animate-in fade-in duration-500">
+              <div className="space-y-4">
                 <div className="bg-slate-900/80 border border-slate-700/50 rounded-xl p-4">
                   <div className="flex justify-between items-center mb-3">
                     <span className="text-xs font-bold text-sky-400 flex items-center gap-2">
@@ -218,13 +214,7 @@ const App: React.FC = () => {
                         backgroundSize: '200% 100%'
                       }}
                     ></div>
-                    {status.progress === 0 && (
-                      <div className="absolute inset-0 bg-sky-500/20 animate-pulse"></div>
-                    )}
                   </div>
-                  <p className="mt-2 text-[10px] text-slate-500 italic">
-                    {status.step === 'merging' ? 'Note: 0% might persist during file analysis. Please wait.' : 'Contacting AI...'}
-                  </p>
                 </div>
 
                 <div>
@@ -250,7 +240,7 @@ const App: React.FC = () => {
             )}
             
             {status.step === 'error' && (
-              <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs flex items-start gap-3 animate-in bounce-in duration-300">
+              <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs flex items-start gap-3">
                  <i className="fas fa-exclamation-circle mt-0.5 text-lg"></i>
                  <div className="flex-1">
                    <p className="font-bold mb-1 underline">Processing Error</p>
@@ -261,7 +251,6 @@ const App: React.FC = () => {
           </div>
         </StepCard>
 
-        {/* STEP 3: RESULT */}
         {status.step === 'completed' && resultVideoUrl && (
           <StepCard
             number={3}
@@ -298,15 +287,9 @@ const App: React.FC = () => {
       </div>
 
       <footer className="mt-20 py-10 border-t border-slate-800/50 text-center">
-        <div className="flex items-center justify-center gap-6 mb-6">
-          <i className="fab fa-chrome text-slate-700 text-xl hover:text-sky-500 transition-colors"></i>
-          <i className="fas fa-microchip text-slate-700 text-xl hover:text-sky-500 transition-colors"></i>
-          <i className="fas fa-shield-alt text-slate-700 text-xl hover:text-sky-500 transition-colors"></i>
-        </div>
         <p className="text-slate-500 text-[10px] uppercase font-black tracking-[0.2em] mb-3">Powered by Gemini Pro & FFmpeg WebAssembly</p>
         <div className="max-w-md mx-auto space-y-2 text-slate-600 text-[11px] leading-relaxed">
           <p>Processing happens entirely on your local CPU. Large 1080p videos require significant RAM (8GB+ recommended).</p>
-          <p>Bilingual translation format ensures educational value and cross-cultural reach.</p>
         </div>
       </footer>
     </div>

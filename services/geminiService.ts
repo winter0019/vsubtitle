@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { TranslationModel } from "../types";
+import { TranslationModel } from "../types.ts";
 
 export const translateSubtitles = async (
   srtContent: string,
@@ -38,7 +38,7 @@ export const translateSubtitles = async (
     contents: srtContent,
     config: {
       systemInstruction: systemPrompt,
-      temperature: 0.1, // Lower temperature for more consistent formatting
+      temperature: 0.1,
     },
   });
 
@@ -46,6 +46,5 @@ export const translateSubtitles = async (
     throw new Error("Failed to generate translation from Gemini.");
   }
 
-  // Basic cleanup to ensure no markdown markers are included
   return response.text.replace(/```srt/g, '').replace(/```/g, '').trim();
 };
