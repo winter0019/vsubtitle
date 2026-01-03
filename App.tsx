@@ -52,6 +52,20 @@ const App: React.FC = () => {
     }
   };
 
+  const downloadSrt = () => {
+    if (!srtContent) return;
+    const blob = new Blob([srtContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const baseName = srtFile?.name.replace('.srt', '') || 'translated';
+    a.download = `${baseName}_bilingual.srt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const processWorkflow = async () => {
     if (!videoFile || (!srtFile && !srtContent)) {
       alert("Please upload both a 1080p video file and its corresponding SRT file.");
@@ -274,17 +288,25 @@ const App: React.FC = () => {
                   Ready
                 </div>
               </div>
-              <div className="flex flex-col sm:flex-row gap-4">
-                <a 
-                  href={resultVideoUrl}
-                  download={`SubMerge_AI_${videoFile?.name || 'video.mp4'}`}
-                  className="flex-1 bg-green-600 hover:bg-green-500 py-4 rounded-xl font-black text-sm uppercase tracking-widest text-center transition-all shadow-lg shadow-green-900/30 active:scale-[0.97] flex items-center justify-center gap-2"
-                >
-                  Download Output <i className="fas fa-download"></i>
-                </a>
+              <div className="flex flex-col space-y-3">
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <a 
+                    href={resultVideoUrl}
+                    download={`SubMerge_AI_${videoFile?.name || 'video.mp4'}`}
+                    className="flex-1 bg-green-600 hover:bg-green-500 py-4 rounded-xl font-black text-sm uppercase tracking-widest text-center transition-all shadow-lg shadow-green-900/30 active:scale-[0.97] flex items-center justify-center gap-2"
+                  >
+                    Download Output <i className="fas fa-download"></i>
+                  </a>
+                  <button 
+                    onClick={downloadSrt}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-500 py-4 rounded-xl font-black text-sm uppercase tracking-widest text-center transition-all shadow-lg shadow-indigo-900/30 active:scale-[0.97] flex items-center justify-center gap-2"
+                  >
+                    Download Bilingual SRT <i className="fas fa-file-alt"></i>
+                  </button>
+                </div>
                 <button 
                   onClick={() => window.location.reload()}
-                  className="bg-slate-800 hover:bg-slate-700 px-8 py-4 rounded-xl font-bold text-sm text-slate-300 transition-all border border-slate-700/50"
+                  className="w-full bg-slate-800 hover:bg-slate-700 py-4 rounded-xl font-bold text-sm text-slate-300 transition-all border border-slate-700/50"
                 >
                   New Project
                 </button>
