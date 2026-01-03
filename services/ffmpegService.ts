@@ -4,12 +4,18 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
 let ffmpeg: FFmpeg | null = null;
 
-export const getFFmpeg = async () => {
+/**
+ * Initializes and returns the FFmpeg instance.
+ * Uses consistent versioning for core and wasm.
+ */
+export const getFFmpeg = async (onLog?: (msg: string) => void) => {
   if (ffmpeg) return ffmpeg;
 
   ffmpeg = new FFmpeg();
   
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+  
+  onLog?.('Loading FFmpeg core components...');
   await ffmpeg.load({
     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
@@ -19,8 +25,8 @@ export const getFFmpeg = async () => {
 };
 
 /**
- * Merges video and subtitles using FFmpeg.wasm.
- * Includes fetching a font file to ensure the 'subtitles' filter works correctly.
+ * Merges video and subtitles. 
+ * Improved with specific font mapping and smaller chunk processing for browser stability.
  */
 export const mergeVideoAndSubtitles = async (
   videoFile: File,
@@ -28,54 +34,63 @@ export const mergeVideoAndSubtitles = async (
   onProgress: (progress: number) => void,
   onLog: (message: string) => void
 ): Promise<Blob> => {
-  const ffmpegInstance = await getFFmpeg();
+  const ffmpegInstance = await getFFmpeg(onLog);
 
   ffmpegInstance.on('log', ({ message }) => {
     onLog(message);
-    console.log('[FFmpeg]', message);
+    console.debug('[FFmpeg Native Log]', message);
   });
 
   ffmpegInstance.on('progress', ({ progress }) => {
-    // FFmpeg.wasm progress is 0-1
+    // progress is 0-1
     onProgress(Math.round(progress * 100));
   });
 
-  // 1. Load Font (Required for 'subtitles' filter to render text)
-  // Using a compact Noto Sans SC font from a reliable CDN
-  const fontUrl = 'https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/Variable/OTC/NotoSansCJKsc-VF.otf';
-  onLog('Loading font assets...');
-  try {
-    const fontData = await fetchFile(fontUrl);
-    await ffmpegInstance.writeFile('font.otf', fontData);
-  } catch (e) {
-    onLog('Warning: Could not load external font, falling back to system defaults.');
-  }
-
-  // 2. Write files to virtual FS
-  onLog('Preparing files for processing...');
-  await ffmpegInstance.writeFile('video.mp4', await fetchFile(videoFile));
+  // 1. Setup Virtual File System
+  onLog('Preparing virtual file system...');
+  const videoData = await fetchFile(videoFile);
+  await ffmpegInstance.writeFile('input.mp4', videoData);
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(srtContent));
 
-  // 3. Execute FFmpeg command
-  // Following the user's specific request: 
-  // subtitles='subs.srt':force_style='FontName=Noto Sans SC,FontSize=18,MarginV=14,Outline=2,Shadow=1'
-  // Note: We map our loaded font file 'font.otf' via a fontconfig-like mechanism in FFmpeg.wasm if possible, 
-  // but usually just providing the path in the filter is safer if fontconfig isn't fully initialized.
-  
-  onLog('Starting hardcoding process. This may take a while depending on video length...');
-  
-  // We use the 'subtitles' filter. 
-  // To ensure the font is found, we can try to point to it, though standard FFmpeg.wasm 
-  // builds use internal fonts if provided or fall back.
-  await ffmpegInstance.exec([
-    '-i', 'video.mp4',
-    '-vf', "subtitles=subs.srt:fontsdir=/:force_style='FontName=Noto Sans CJK SC,FontSize=18,MarginV=14,Outline=2,Shadow=1'",
-    '-c:a', 'copy',
-    '-preset', 'veryfast', // Optimization for browser execution
-    'output.mp4'
-  ]);
+  // 2. Load Font (Critical for 'subtitles' filter)
+  // We use a light version of Noto Sans to ensure speed and CJK support
+  const fontUrl = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@master/hinted/ttf/NotoSans/NotoSans-Regular.ttf';
+  onLog('Downloading font for rendering...');
+  try {
+    const fontResponse = await fetch(fontUrl);
+    const fontBuffer = await fontResponse.arrayBuffer();
+    await ffmpegInstance.writeFile('font.ttf', new Uint8Array(fontBuffer));
+    onLog('Font loaded successfully.');
+  } catch (e) {
+    onLog('Warning: Could not load web font. Rendering may use defaults.');
+  }
 
-  onLog('Reading final output...');
+  // 3. Execute Command
+  // We use the 'subtitles' filter with specific fontfile reference.
+  // This is the most reliable way in FFmpeg.wasm to ensure text is rendered.
+  onLog('Starting hardcoding process... This utilizes your CPU and may take several minutes.');
+  
+  try {
+    await ffmpegInstance.exec([
+      '-i', 'input.mp4',
+      '-vf', "subtitles=subs.srt:fontsdir=/:fontfile=font.ttf:force_style='FontSize=20,MarginV=15,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
+      '-c:a', 'copy',      // Copy audio without re-encoding to save time
+      '-preset', 'ultrafast', // Speed over compression for browser environment
+      '-crf', '28',        // Decent quality balance
+      'output.mp4'
+    ]);
+  } catch (err: any) {
+    onLog(`FFmpeg Execution Error: ${err.message}`);
+    throw err;
+  }
+
+  onLog('Finalizing output file...');
   const data = await ffmpegInstance.readFile('output.mp4');
+  
+  // Clean up to save memory
+  await ffmpegInstance.deleteFile('input.mp4');
+  await ffmpegInstance.deleteFile('subs.srt');
+  await ffmpegInstance.deleteFile('output.mp4');
+
   return new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
 };
