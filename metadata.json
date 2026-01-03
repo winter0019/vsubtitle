@@ -1,0 +1,8 @@
+{
+  "name": "SubMerge AI - YouTube Subtitle Hardcoder",
+  "description": "A powerful tool to download, translate subtitles using Gemini AI, and hardcode them into 1080p videos using FFmpeg.wasm directly in your browser.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
