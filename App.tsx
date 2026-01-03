@@ -261,7 +261,15 @@ const App: React.FC = () => {
           >
             <div className="space-y-6">
               <div className="aspect-video rounded-xl overflow-hidden bg-black border border-slate-700 shadow-2xl ring-1 ring-white/10 group relative">
-                <video src={resultVideoUrl} controls className="w-full h-full" />
+                <video 
+                  key={resultVideoUrl} 
+                  controls 
+                  className="w-full h-full"
+                  playsInline
+                >
+                   <source src={resultVideoUrl} type="video/mp4" />
+                   Your browser does not support the video tag.
+                </video>
                 <div className="absolute top-4 right-4 bg-green-500 text-white text-[10px] px-2 py-1 rounded font-black uppercase tracking-widest shadow-lg">
                   Ready
                 </div>

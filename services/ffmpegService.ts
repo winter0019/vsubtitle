@@ -50,7 +50,6 @@ export const mergeVideoAndSubtitles = async (
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(srtContent));
 
   // 2. Load Font
-  // We name it Arial.ttf because it's the most common default fallback for the subtitles filter
   const fontUrl = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@master/hinted/ttf/NotoSans/NotoSans-Regular.ttf';
   onLog('Preparing font environment...');
   try {
@@ -61,7 +60,6 @@ export const mergeVideoAndSubtitles = async (
 
     if (fontResponse.ok) {
       const fontBuffer = await fontResponse.arrayBuffer();
-      // Writing to Arial.ttf helps FFmpeg find it automatically in many cases
       await ffmpegInstance.writeFile('Arial.ttf', new Uint8Array(fontBuffer));
       onLog('Font environment ready.');
     }
@@ -73,14 +71,26 @@ export const mergeVideoAndSubtitles = async (
   onLog('Starting hardcoding process... Please keep this tab active.');
   
   try {
-    // We removed 'fontfile=' as it was causing the "Option not found" error.
-    // We use 'fontsdir=/' so FFmpeg looks in the root for Arial.ttf.
+    /**
+     * Web Compatibility Flags:
+     * -c:v libx264: Explicitly use H.264
+     * -profile:v main -level 3.1: Standard profile for web playback.
+     * -c:a aac: Re-encode audio to ensure timing compatibility with the new video stream.
+     * -pix_fmt yuv420p: Standard 8-bit color space.
+     * -movflags +faststart: Moves metadata to the start.
+     */
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
       '-vf', "subtitles=subs.srt:fontsdir=/:force_style='FontSize=24,MarginV=20,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
-      '-c:a', 'copy',
+      '-c:v', 'libx264',
+      '-profile:v', 'main',
+      '-level', '3.1',
+      '-c:a', 'aac',
+      '-b:a', '128k',
       '-preset', 'ultrafast',
-      '-crf', '30',
+      '-crf', '28',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
       'output.mp4'
     ]);
   } catch (err: any) {
@@ -95,11 +105,12 @@ export const mergeVideoAndSubtitles = async (
   try {
     await ffmpegInstance.deleteFile('input.mp4');
     await ffmpegInstance.deleteFile('subs.srt');
-    await ffmpegInstance.deleteFile('Arial.ttf');
+    if (await ffmpegInstance.readFile('Arial.ttf')) await ffmpegInstance.deleteFile('Arial.ttf');
     await ffmpegInstance.deleteFile('output.mp4');
   } catch (e) {
     console.warn('Cleanup failed, but processing succeeded.');
   }
 
-  return new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
+  // Return a fresh blob with correct MIME type
+  return new Blob([data], { type: 'video/mp4' });
 };
