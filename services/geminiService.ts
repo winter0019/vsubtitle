@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { TranslationModel } from "../types.ts";
 
 export const translateSubtitles = async (
@@ -42,9 +42,21 @@ export const translateSubtitles = async (
     },
   });
 
-  if (!response.text) {
+  const rawText = response.text;
+  if (!rawText) {
     throw new Error("Failed to generate translation from Gemini.");
   }
 
-  return response.text.replace(/```srt/g, '').replace(/```/g, '').trim();
+  // Robust SRT extraction: Find the first occurrence of a subtitle entry (Number + Timestamp)
+  // This strips any preamble like "Here is your translation..."
+  const srtMatch = rawText.match(/(\d+\s+\d{2}:\d{2}:\d{2},\d{3}\s+-->\s+\d{2}:\d{2}:\d{2},\d{3}[\s\S]*)/);
+  let cleanedSrt = srtMatch ? srtMatch[0] : rawText;
+
+  // Final cleanup: remove markdown blocks if they persist and trim
+  cleanedSrt = cleanedSrt
+    .replace(/```srt/g, '')
+    .replace(/```/g, '')
+    .trim();
+
+  return cleanedSrt;
 };
