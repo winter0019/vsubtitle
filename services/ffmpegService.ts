@@ -44,53 +44,59 @@ export const mergeVideoAndSubtitles = async (
   });
 
   // 1. Setup Virtual File System
-  onLog('Writing files to memory...');
+  onLog('Preparing files in virtual environment...');
   const videoData = await fetchFile(videoFile);
   await ffmpegInstance.writeFile('input.mp4', videoData);
   
-  // Normalize line endings for SRT to ensure FFmpeg parses correctly
+  // Normalize line endings and ensure UTF-8
   const normalizedSrt = srtContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(normalizedSrt));
+  
+  // Log beginning of SRT for debugging
+  onLog(`SRT Verification (First 50 chars): ${normalizedSrt.substring(0, 50).replace(/\n/g, ' ')}...`);
 
   // 2. Load Font
+  // Using NotoSans which has better unicode support for bilingual text
   const fontUrl = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@master/hinted/ttf/NotoSans/NotoSans-Regular.ttf';
-  onLog('Preparing font environment...');
+  onLog('Downloading Noto Sans font for bilingual rendering...');
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); 
+    const timeoutId = setTimeout(() => controller.abort(), 10000); 
     const fontResponse = await fetch(fontUrl, { signal: controller.signal });
     clearTimeout(timeoutId);
 
     if (fontResponse.ok) {
       const fontBuffer = await fontResponse.arrayBuffer();
-      // We explicitly name this Arial.ttf so it maps to the FontName property
-      await ffmpegInstance.writeFile('Arial.ttf', new Uint8Array(fontBuffer));
-      onLog('Font environment ready.');
+      // Write to root so fontsdir=/ finds it
+      await ffmpegInstance.writeFile('NotoSans-Regular.ttf', new Uint8Array(fontBuffer));
+      onLog('Font NotoSans-Regular.ttf loaded.');
+    } else {
+      onLog('Font download failed, will attempt with system defaults.');
     }
   } catch (e) {
-    onLog('Font load skipped; using internal defaults.');
+    onLog('Font download error, using fallback.');
   }
 
   // 3. Execute Command
-  onLog('Starting hardcoding process... Please keep this tab active.');
+  onLog('Hardcoding subtitles... This takes a few minutes depending on video length.');
   
   try {
     /**
-     * Web Compatibility Flags:
-     * -vf subtitles: The core filter. 
-     * force_style: FontName=Arial is crucial here to match the file we wrote.
-     * MarginV=30: Raised slightly for better visibility.
+     * libass filter in WASM is sensitive. 
+     * - 'fontsdir=/' tells it to look in the root for .ttf files
+     * - 'FontName=Noto Sans' matches the internal metadata of the file we downloaded
+     * - 'subtitles=filename=subs.srt' is the most robust path specification
      */
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
-      '-vf', "subtitles=subs.srt:fontsdir=/:force_style='FontName=Arial,FontSize=24,MarginV=30,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
+      '-vf', "subtitles=filename=subs.srt:fontsdir=/:force_style='FontName=Noto Sans,FontSize=20,MarginV=25,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
       '-c:v', 'libx264',
       '-profile:v', 'main',
       '-level', '3.1',
       '-c:a', 'aac',
       '-b:a', '128k',
       '-preset', 'ultrafast',
-      '-crf', '28',
+      '-crf', '26', // Slightly better quality
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       'output.mp4'
@@ -100,15 +106,14 @@ export const mergeVideoAndSubtitles = async (
     throw err;
   }
 
-  onLog('Finalizing build...');
+  onLog('Rebuilding container...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
   // Clean up memory
   try {
     await ffmpegInstance.deleteFile('input.mp4');
     await ffmpegInstance.deleteFile('subs.srt');
-    // Use a safer check for deleting the font file
-    try { await ffmpegInstance.deleteFile('Arial.ttf'); } catch (e) {}
+    try { await ffmpegInstance.deleteFile('NotoSans-Regular.ttf'); } catch (e) {}
     await ffmpegInstance.deleteFile('output.mp4');
   } catch (e) {
     console.warn('Cleanup failed, but processing succeeded.');

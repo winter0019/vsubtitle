@@ -2,6 +2,25 @@
 import { GoogleGenAI } from "@google/genai";
 import { TranslationModel } from "../types.ts";
 
+/**
+ * Normalizes SRT content to ensure it strictly follows the standard format.
+ * Fixes missing indices, inconsistent line breaks, and trailing spaces.
+ */
+const normalizeSrt = (content: string): string => {
+  const entries = content.trim().split(/\n\s*\n/);
+  return entries.map((entry, index) => {
+    const lines = entry.trim().split('\n');
+    // Ensure the first line is the index
+    const timestampLineIndex = lines.findIndex(l => l.includes(' --> '));
+    if (timestampLineIndex === -1) return ''; // Skip malformed entries
+
+    const timestamps = lines[timestampLineIndex];
+    const textLines = lines.slice(timestampLineIndex + 1);
+    
+    return `${index + 1}\n${timestamps}\n${textLines.join('\n')}\n`;
+  }).filter(Boolean).join('\n');
+};
+
 export const translateSubtitles = async (
   srtContent: string,
   targetLanguage: string,
@@ -17,20 +36,13 @@ export const translateSubtitles = async (
     Structure for each subtitle entry:
     1. Entry Number
     2. Timestamp (00:00:00,000 --> 00:00:00,000)
-    3. Original Text (Top line)
-    4. Translated Text (Bottom line)
-    5. A single blank line before the next entry
-    
-    Example:
-    1
-    00:00:01,000 --> 00:00:04,000
-    Hello, how are you today?
-    你好，你今天怎么样？
+    3. Original Text (Line 1)
+    4. Translated Text (Line 2)
+    5. Exactly one blank line before next entry
     
     Maintain exactly the same timestamps and entry IDs. 
     Translate contextually and naturally. 
-    DO NOT include any conversational filler, markdown code blocks, or explanations. 
-    Return ONLY the raw SRT text.
+    Return ONLY the raw SRT text without any preamble or code blocks.
   `;
 
   const response = await ai.models.generateContent({
@@ -47,16 +59,15 @@ export const translateSubtitles = async (
     throw new Error("Failed to generate translation from Gemini.");
   }
 
-  // Robust SRT extraction: Find the first occurrence of a subtitle entry (Number + Timestamp)
-  // This strips any preamble like "Here is your translation..."
+  // Extract valid SRT part
   const srtMatch = rawText.match(/(\d+\s+\d{2}:\d{2}:\d{2},\d{3}\s+-->\s+\d{2}:\d{2}:\d{2},\d{3}[\s\S]*)/);
   let cleanedSrt = srtMatch ? srtMatch[0] : rawText;
 
-  // Final cleanup: remove markdown blocks if they persist and trim
   cleanedSrt = cleanedSrt
     .replace(/```srt/g, '')
     .replace(/```/g, '')
     .trim();
 
-  return cleanedSrt;
+  // Apply strict normalization
+  return normalizeSrt(cleanedSrt);
 };
