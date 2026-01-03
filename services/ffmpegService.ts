@@ -49,51 +49,56 @@ export const mergeVideoAndSubtitles = async (
   await ffmpegInstance.writeFile('input.mp4', videoData);
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(srtContent));
 
-  // 2. Load Font with a timeout to prevent hanging
+  // 2. Load Font
+  // We name it Arial.ttf because it's the most common default fallback for the subtitles filter
   const fontUrl = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@master/hinted/ttf/NotoSans/NotoSans-Regular.ttf';
-  onLog('Fetching font assets...');
+  onLog('Preparing font environment...');
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 8000); 
     const fontResponse = await fetch(fontUrl, { signal: controller.signal });
     clearTimeout(timeoutId);
 
     if (fontResponse.ok) {
       const fontBuffer = await fontResponse.arrayBuffer();
-      await ffmpegInstance.writeFile('font.ttf', new Uint8Array(fontBuffer));
-      onLog('Font assets ready.');
+      // Writing to Arial.ttf helps FFmpeg find it automatically in many cases
+      await ffmpegInstance.writeFile('Arial.ttf', new Uint8Array(fontBuffer));
+      onLog('Font environment ready.');
     }
   } catch (e) {
-    onLog('Font load skipped (using fallback).');
+    onLog('Font load skipped; using internal defaults.');
   }
 
   // 3. Execute Command
   onLog('Starting hardcoding process... Please keep this tab active.');
   
   try {
+    // We removed 'fontfile=' as it was causing the "Option not found" error.
+    // We use 'fontsdir=/' so FFmpeg looks in the root for Arial.ttf.
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
-      '-vf', "subtitles=subs.srt:fontsdir=/:fontfile=font.ttf:force_style='FontSize=20,MarginV=15,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
-      '-c:a', 'copy',      // Audio copy is instant
-      '-preset', 'ultrafast', // Most critical for browser usage
-      '-crf', '32',        // Higher CRF = Faster processing
+      '-vf', "subtitles=subs.srt:fontsdir=/:force_style='FontSize=24,MarginV=20,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
+      '-c:a', 'copy',
+      '-preset', 'ultrafast',
+      '-crf', '30',
       'output.mp4'
     ]);
   } catch (err: any) {
-    onLog(`FFmpeg Error: ${err.message}`);
+    onLog(`FFmpeg Execution Error: ${err.message}`);
     throw err;
   }
 
-  onLog('Reading final build...');
+  onLog('Finalizing build...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
-  // Clean up
+  // Clean up memory
   try {
     await ffmpegInstance.deleteFile('input.mp4');
     await ffmpegInstance.deleteFile('subs.srt');
+    await ffmpegInstance.deleteFile('Arial.ttf');
     await ffmpegInstance.deleteFile('output.mp4');
   } catch (e) {
-    console.warn('Cleanup failed.');
+    console.warn('Cleanup failed, but processing succeeded.');
   }
 
   return new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
