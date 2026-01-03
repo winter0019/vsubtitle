@@ -53,50 +53,50 @@ export const mergeVideoAndSubtitles = async (
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(normalizedSrt));
   
   // Log beginning of SRT for debugging
-  onLog(`SRT Verification (First 50 chars): ${normalizedSrt.substring(0, 50).replace(/\n/g, ' ')}...`);
+  onLog(`SRT Ready: ${normalizedSrt.substring(0, 40).replace(/\n/g, ' ')}...`);
 
-  // 2. Load Font
-  // Using NotoSans which has better unicode support for bilingual text
-  const fontUrl = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@master/hinted/ttf/NotoSans/NotoSans-Regular.ttf';
-  onLog('Downloading Noto Sans font for bilingual rendering...');
+  // 2. Load CJK-Compatible Font
+  // Noto Sans SC (Simplified Chinese) is required for Chinese characters
+  const fontUrl = 'https://fonts.gstatic.com/s/notosanssc/v36/k3kXo84MPtRZmq-Tv33_59_3O-f3.ttf';
+  onLog('Downloading Noto Sans SC (Chinese Support) font...');
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); 
+    const timeoutId = setTimeout(() => controller.abort(), 15000); 
     const fontResponse = await fetch(fontUrl, { signal: controller.signal });
     clearTimeout(timeoutId);
 
     if (fontResponse.ok) {
       const fontBuffer = await fontResponse.arrayBuffer();
-      // Write to root so fontsdir=/ finds it
-      await ffmpegInstance.writeFile('NotoSans-Regular.ttf', new Uint8Array(fontBuffer));
-      onLog('Font NotoSans-Regular.ttf loaded.');
+      // We write the file to the virtual root
+      await ffmpegInstance.writeFile('font.ttf', new Uint8Array(fontBuffer));
+      onLog('Font font.ttf (Noto Sans SC) loaded into memory.');
     } else {
-      onLog('Font download failed, will attempt with system defaults.');
+      onLog('Font download failed. Subtitles might not render Chinese characters correctly.');
     }
   } catch (e) {
-    onLog('Font download error, using fallback.');
+    onLog('Font download error, attempting with system defaults.');
   }
 
   // 3. Execute Command
-  onLog('Hardcoding subtitles... This takes a few minutes depending on video length.');
+  onLog('Hardcoding subtitles... Rendering CJK glyphs can be intensive.');
   
   try {
     /**
-     * libass filter in WASM is sensitive. 
-     * - 'fontsdir=/' tells it to look in the root for .ttf files
-     * - 'FontName=Noto Sans' matches the internal metadata of the file we downloaded
-     * - 'subtitles=filename=subs.srt' is the most robust path specification
+     * libass filter in WASM notes:
+     * - 'fontsdir=/': Essential to find our uploaded .ttf
+     * - 'FontName=Noto Sans SC': Must match the internal font name of the .ttf file
+     * - 'FontSize=22': Adjusted for better readability on 1080p
      */
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
-      '-vf', "subtitles=filename=subs.srt:fontsdir=/:force_style='FontName=Noto Sans,FontSize=20,MarginV=25,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
+      '-vf', "subtitles=filename=subs.srt:fontsdir=/:force_style='FontName=Noto Sans SC,FontSize=22,MarginV=30,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
       '-c:v', 'libx264',
       '-profile:v', 'main',
       '-level', '3.1',
       '-c:a', 'aac',
       '-b:a', '128k',
       '-preset', 'ultrafast',
-      '-crf', '26', // Slightly better quality
+      '-crf', '26',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       'output.mp4'
@@ -106,17 +106,17 @@ export const mergeVideoAndSubtitles = async (
     throw err;
   }
 
-  onLog('Rebuilding container...');
+  onLog('Finalizing video container...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
   // Clean up memory
   try {
     await ffmpegInstance.deleteFile('input.mp4');
     await ffmpegInstance.deleteFile('subs.srt');
-    try { await ffmpegInstance.deleteFile('NotoSans-Regular.ttf'); } catch (e) {}
+    try { await ffmpegInstance.deleteFile('font.ttf'); } catch (e) {}
     await ffmpegInstance.deleteFile('output.mp4');
   } catch (e) {
-    console.warn('Cleanup failed, but processing succeeded.');
+    console.warn('Cleanup minor error.');
   }
 
   return new Blob([data], { type: 'video/mp4' });
