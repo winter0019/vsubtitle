@@ -24,7 +24,7 @@ export const getFFmpeg = async (onLog?: (msg: string) => void) => {
 };
 
 /**
- * Merges video and subtitles. 
+ * Merges video and subtitles with universal font support.
  */
 export const mergeVideoAndSubtitles = async (
   videoFile: File,
@@ -43,12 +43,12 @@ export const mergeVideoAndSubtitles = async (
     onProgress(Math.round(progress * 100));
   });
 
-  // 1. Setup Virtual File System in Root (/)
-  onLog('Preparing virtual workspace in root directory...');
+  // 1. Setup Virtual File System
+  onLog('Preparing virtual workspace...');
   const videoData = await fetchFile(videoFile);
   await ffmpegInstance.writeFile('input.mp4', videoData);
   
-  // Normalize SRT for UTF-8 compatibility and standard line endings
+  // Normalize SRT for UTF-8 compatibility
   const cleanSrt = srtContent
     .replace(/^\uFEFF/, '') 
     .replace(/\r\n/g, '\n')
@@ -56,67 +56,65 @@ export const mergeVideoAndSubtitles = async (
     .trim() + '\n\n';
     
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(cleanSrt));
-  onLog(`SRT file written to virtual root.`);
 
   // 2. Load Universal Fonts (CJK + Latin)
-  const fonts = [
-    {
-      name: 'noto.ttf',
-      url: 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf'
+  const fontFiles = [
+    { 
+      name: 'noto.ttf', 
+      url: 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf' 
     },
-    {
-      name: 'noto_latin.ttf',
-      url: 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSans/NotoSans-Regular.ttf'
+    { 
+      name: 'noto_latin.ttf', 
+      url: 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSans/NotoSans-Regular.ttf' 
     }
   ];
 
-  for (const font of fonts) {
-    onLog(`Downloading font: ${font.name}...`);
+  for (const font of fontFiles) {
+    onLog(`Loading font: ${font.name}...`);
     try {
       const response = await fetch(font.url);
       if (!response.ok) throw new Error(`Failed to download ${font.name}`);
       const buffer = await response.arrayBuffer();
       await ffmpegInstance.writeFile(font.name, new Uint8Array(buffer));
     } catch (e) {
-      onLog(`Warning: Font ${font.name} failed to load.`);
+      onLog(`Warning: Font ${font.name} loading failed. Falling back to default.`);
     }
   }
 
   // 3. Execute Hardcoding Command
-  // Using the exact parameters from your working CLI: FontName, FontSize, MarginV
-  onLog('Burning bilingual subtitles... This is a CPU-intensive local process.');
+  onLog('Burning bilingual subtitles... This is a high-load process.');
   
   try {
     /**
      * Filter Breakdown:
-     * - subtitles=subs.srt: Source file in the same directory.
-     * - fontsdir=/: Explicitly look in the root virtual folder for noto.ttf.
-     * - force_style: Exact styles from your working Windows CLI command.
+     * - subtitles=subs.srt: Source SRT.
+     * - fontsdir=/: Look in the root for ttf files.
+     * - force_style: Exact styles for Noto Sans SC (covers English and Chinese).
      */
     const filter = "subtitles=subs.srt:fontsdir=/:force_style='FontName=Noto Sans SC,FontSize=18,MarginV=14,Outline=1,Shadow=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'";
     
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
       '-vf', filter,
-      '-map', '0:v:0',        // Select only the first video stream (ignoring thumbnails)
-      '-map', '0:a?',          // Select audio if available
+      '-map', '0:v:0',        // Select primary video stream
+      '-map', '0:a?',          // Copy audio if it exists
       '-c:v', 'libx264',
-      '-preset', 'ultrafast',  // Critical for browser-based encoding speed
+      '-preset', 'ultrafast',  // Faster browser encoding
       '-crf', '23',           
-      '-c:a', 'copy',          // Direct audio copy to save time
+      '-c:a', 'copy',          // No audio re-encoding
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       'output.mp4'
     ]);
   } catch (err: any) {
-    onLog(`FFmpeg Execution Error: ${err.message}`);
+    onLog(`FFmpeg Error: ${err.message}`);
     throw err;
   }
 
-  onLog('Finalizing video result...');
+  onLog('Success! Finalizing video blob...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
-  // Cleanup virtual files to prevent browser memory leaks
+  // Cleanup
   try {
     await ffmpegInstance.deleteFile('input.mp4');
     await ffmpegInstance.deleteFile('subs.srt');

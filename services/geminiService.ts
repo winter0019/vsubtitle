@@ -4,7 +4,6 @@ import { TranslationModel } from "../types.ts";
 
 /**
  * Standardizes SRT format for FFmpeg compatibility.
- * Ensures double-newline separation and trims whitespace from individual blocks.
  */
 const normalizeSrt = (content: string): string => {
   return content
@@ -26,47 +25,47 @@ export const translateSubtitles = async (
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const systemPrompt = `
-    You are a professional bilingual subtitle translator.
+    You are a professional subtitle translator and formatting expert.
     
     TASK:
     Convert the provided English SRT into a BILINGUAL version.
     
     STRICT RULES:
-    1. For every block, keep the original English line.
-    2. Add the translated ${targetLanguage} line immediately below it.
-    3. Maintain ALL IDs and timestamps exactly as provided (00:00:00,000 --> 00:00:00,000).
+    1. For every entry, you MUST preserve the original English text on Line 1.
+    2. You MUST add the accurate ${targetLanguage} translation on Line 2 immediately below it.
+    3. Keep IDs (1, 2, 3...) and timestamps (00:00:00,000 --> 00:00:00,000) EXACTLY unchanged.
     4. Do not remove blank lines between subtitle blocks.
-    5. Output RAW SRT content ONLY.
-    6. Absolutely NO markdown code blocks (no \`\`\`), no titles, and no explanations.
+    5. Output RAW SRT content ONLY. 
+    6. NO markdown code blocks (\`\`\`), NO explanations, NO extra whitespace.
     
-    EXAMPLE OUTPUT:
+    Example Output:
     1
     00:00:01,000 --> 00:00:03,000
-    This is a test.
-    这是一个测试。
+    Hello, how are you?
+    你好，你最近怎么样？
   `;
 
+  // Using the corrected structure for generateContent
   const response = await ai.models.generateContent({
     model: modelName,
-    contents: srtContent,
+    contents: [{ role: "user", parts: [{ text: srtContent }] }],
     config: {
       systemInstruction: systemPrompt,
-      temperature: 0.1, // Lower temperature for more consistent formatting
-      topP: 0.95,
+      temperature: 0.1,
     },
   });
 
   let rawText = response.text || "";
   
-  // Robust cleaning: Strip markdown code fences (even with language hints) and trim
+  // Clean potential markdown fences
   rawText = rawText
     .replace(/```[a-z]*\n?/gi, "")
     .replace(/```/g, "")
     .trim();
 
-  // If the AI output is completely empty or garbage, we fall back to the original content
+  // Basic validation check
   if (!rawText || !rawText.includes('-->')) {
-    console.error("Gemini failed to return valid SRT. Returning original content.");
+    console.error("Gemini output invalid SRT. Falling back to original.");
     return normalizeSrt(srtContent);
   }
 
