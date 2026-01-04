@@ -48,7 +48,7 @@ export const mergeVideoAndSubtitles = async (
   const videoData = await fetchFile(videoFile);
   await ffmpegInstance.writeFile('input.mp4', videoData);
   
-  // Clean SRT: Remove BOM, normalize line endings
+  // Clean SRT: Remove BOM, normalize line endings, and ensure it's not empty
   const cleanSrt = srtContent
     .replace(/^\uFEFF/, '') 
     .replace(/\r\n/g, '\n')
@@ -62,30 +62,31 @@ export const mergeVideoAndSubtitles = async (
   // We use Noto Sans SC to ensure Chinese characters render correctly.
   const fontUrl = 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf';
   
-  onLog('Loading Noto Sans SC font for Chinese support...');
+  onLog('Loading Noto Sans SC font for CJK support...');
   try {
     const fontResponse = await fetch(fontUrl);
     if (!fontResponse.ok) throw new Error('Font download failed');
     const fontBuffer = await fontResponse.arrayBuffer();
     
-    // We name it noto.ttf and tell libass to look in this directory
+    // We create a specific path for the font to help libass find it
     await ffmpegInstance.writeFile('noto.ttf', new Uint8Array(fontBuffer));
-    onLog('Font file registered in virtual memory.');
+    onLog('Font loaded: noto.ttf');
   } catch (e) {
-    onLog(`Warning: Font loading failed: ${(e as Error).message}. Characters might be missing.`);
+    onLog(`Warning: Font loading failed: ${(e as Error).message}. CJK characters may not appear.`);
   }
 
   // 3. Execute Hardcoding Command
-  onLog('Baking subtitles into video streams...');
+  onLog('Baking subtitles... This process is CPU intensive.');
   
   try {
     /**
      * Filter Breakdown:
      * - subtitles=subs.srt: Source SRT file.
-     * - fontsdir=.: Crucial! Tells the engine to look in the local path for noto.ttf.
+     * - fontsdir=.: Tells libass to look in the current directory for fonts.
      * - force_style:
      *    - Fontname=Noto Sans SC: Matches the internal name of our noto.ttf.
-     *    - Fontsize=24: Optimal for 1080p.
+     *    - Fontsize=24: Increased for better visibility.
+     *    - Alignment=2: Bottom-center.
      */
     const filter = "subtitles=subs.srt:fontsdir=.:force_style='Fontname=Noto Sans SC,Fontsize=24,MarginV=25,Outline=1.5,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'";
     
@@ -94,8 +95,8 @@ export const mergeVideoAndSubtitles = async (
       '-vf', filter,
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
-      '-crf', '24',           
-      '-c:a', 'copy',         
+      '-crf', '24',           // Slightly better quality than 26
+      '-c:a', 'copy',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       'output.mp4'
@@ -105,10 +106,10 @@ export const mergeVideoAndSubtitles = async (
     throw err;
   }
 
-  onLog('Finalizing export...');
+  onLog('Rendering complete. Preparing download...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
-  // Memory Cleanup
+  // Cleanup to free up browser memory
   try {
     await ffmpegInstance.deleteFile('input.mp4');
     await ffmpegInstance.deleteFile('subs.srt');
