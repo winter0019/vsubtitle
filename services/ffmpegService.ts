@@ -36,7 +36,7 @@ export const mergeVideoAndSubtitles = async (
 
   ffmpegInstance.on('log', ({ message }) => {
     onLog(message);
-    console.debug('[FFmpeg]', message);
+    console.debug('[FFmpeg Output]', message);
   });
 
   ffmpegInstance.on('progress', ({ progress }) => {
@@ -62,41 +62,44 @@ export const mergeVideoAndSubtitles = async (
   // We use Noto Sans SC to ensure Chinese characters render correctly.
   const fontUrl = 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf';
   
-  onLog('Loading Noto Sans SC font for CJK support...');
+  onLog('Downloading Noto Sans SC font for hardcoding...');
   try {
     const fontResponse = await fetch(fontUrl);
     if (!fontResponse.ok) throw new Error('Font download failed');
     const fontBuffer = await fontResponse.arrayBuffer();
     
-    // We create a specific path for the font to help libass find it
+    // Write font file - libass will look for this
     await ffmpegInstance.writeFile('noto.ttf', new Uint8Array(fontBuffer));
-    onLog('Font loaded: noto.ttf');
+    onLog('Font registered: noto.ttf');
   } catch (e) {
-    onLog(`Warning: Font loading failed: ${(e as Error).message}. CJK characters may not appear.`);
+    onLog(`Warning: Font loading failed: ${(e as Error).message}. Characters might appear as boxes.`);
   }
 
   // 3. Execute Hardcoding Command
-  onLog('Baking subtitles... This process is CPU intensive.');
+  onLog('Burning subtitles... This will take a moment.');
   
   try {
     /**
      * Filter Breakdown:
-     * - subtitles=subs.srt: Source SRT file.
-     * - fontsdir=.: Tells libass to look in the current directory for fonts.
+     * - subtitles='subs.srt': Source SRT file (using single quotes for path safety).
+     * - fontsdir=.: Tells libass to check the local dir for noto.ttf.
      * - force_style:
-     *    - Fontname=Noto Sans SC: Matches the internal name of our noto.ttf.
-     *    - Fontsize=24: Increased for better visibility.
-     *    - Alignment=2: Bottom-center.
+     *    - FontName=Noto Sans SC: Matches the internal name of the font.
+     *    - FontSize=18: Matching your working CLI size.
+     *    - MarginV=20: Position from bottom.
+     *    - Outline=1: Thin outline for readability.
      */
-    const filter = "subtitles=subs.srt:fontsdir=.:force_style='Fontname=Noto Sans SC,Fontsize=24,MarginV=25,Outline=1.5,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'";
+    const filter = "subtitles='subs.srt':fontsdir=.:force_style='FontName=Noto Sans SC,FontSize=18,MarginV=20,Outline=1,Shadow=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'";
     
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
       '-vf', filter,
+      '-map', '0:v:0',        // Force first video stream (ignores attached thumbnails/pics)
+      '-map', '0:a?',          // Copy audio if exists
       '-c:v', 'libx264',
-      '-preset', 'ultrafast',
-      '-crf', '24',           // Slightly better quality than 26
-      '-c:a', 'copy',
+      '-preset', 'ultrafast',  // Best for browser performance
+      '-crf', '23',           
+      '-c:a', 'copy',          // No need to re-encode audio
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       'output.mp4'
@@ -106,10 +109,10 @@ export const mergeVideoAndSubtitles = async (
     throw err;
   }
 
-  onLog('Rendering complete. Preparing download...');
+  onLog('Success! Finalizing video blob...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
-  // Cleanup to free up browser memory
+  // Memory cleanup
   try {
     await ffmpegInstance.deleteFile('input.mp4');
     await ffmpegInstance.deleteFile('subs.srt');

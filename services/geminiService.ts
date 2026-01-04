@@ -3,24 +3,15 @@ import { GoogleGenAI } from "@google/genai";
 import { TranslationModel } from "../types.ts";
 
 /**
- * Normalizes SRT content to ensure it strictly follows the standard format.
+ * Ensures SRT content follows standard line-break conventions.
  */
 const normalizeSrt = (content: string): string => {
-  const entries = content.trim().split(/\n\s*\n/);
-  return entries.map((entry, index) => {
-    const lines = entry.trim().split('\n');
-    const timestampLineIndex = lines.findIndex(l => l.includes(' --> '));
-    if (timestampLineIndex === -1) return ''; 
-
-    const timestamps = lines[timestampLineIndex];
-    const textLines = lines.slice(timestampLineIndex + 1);
-    
-    // Ensure we have at least one line of text
-    if (textLines.length === 0) return '';
-
-    // Join with simple newlines - FFmpeg's libass handles these correctly
-    return `${index + 1}\n${timestamps}\n${textLines.join('\n')}\n`;
-  }).filter(Boolean).join('\n');
+  // Trim and ensure standard double-newline spacing between blocks
+  return content
+    .trim()
+    .split(/\n\s*\n/)
+    .map(block => block.trim())
+    .join('\n\n') + '\n\n';
 };
 
 export const translateSubtitles = async (
@@ -36,15 +27,12 @@ export const translateSubtitles = async (
     TASK: Convert the provided SRT into a BILINGUAL format.
     TARGET LANGUAGE: ${targetLanguage}
     
-    STRICT FORMATTING RULES:
-    1. For EVERY entry, you must output exactly:
-       Line 1: The original English text.
-       Line 2: The translated ${targetLanguage} text.
-    2. Do not merge lines into one. Keep them separate.
-    3. Keep timestamps (00:00:00,000 --> 00:00:00,000) and IDs exactly as provided.
-    4. Return ONLY the raw SRT content. No markdown code blocks (no \`\`\`), no titles, no explanations.
+    STRICT RULES:
+    1. For every entry, output the original English line, then the translated line immediately below it.
+    2. Keep ALL timestamps and IDs exactly the same.
+    3. Output RAW SRT ONLY. No markdown, no explanations.
     
-    EXAMPLE:
+    Example Output Format:
     1
     00:00:01,000 --> 00:00:04,000
     Hello world
@@ -62,14 +50,8 @@ export const translateSubtitles = async (
 
   let rawText = response.text || "";
   
-  // Strip any accidental Markdown formatting
+  // Strip code blocks if AI included them
   rawText = rawText.replace(/```[a-z]*\n/g, '').replace(/```/g, '').trim();
 
-  // If Gemini failed to return a valid starting ID, just return what we have (cleaned)
-  if (!rawText.match(/^\d+/)) {
-     console.warn("Gemini output might be malformed, attempting to fix...");
-  }
-
-  const finalSrt = normalizeSrt(rawText);
-  return finalSrt;
+  return normalizeSrt(rawText);
 };
