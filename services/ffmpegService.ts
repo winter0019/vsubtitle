@@ -43,12 +43,12 @@ export const mergeVideoAndSubtitles = async (
     onProgress(Math.round(progress * 100));
   });
 
-  // 1. Setup Virtual File System
-  onLog('Preparing virtual workspace...');
+  // 1. Setup Virtual File System in Root (/)
+  onLog('Preparing virtual workspace in root directory...');
   const videoData = await fetchFile(videoFile);
   await ffmpegInstance.writeFile('input.mp4', videoData);
   
-  // Clean SRT: Remove BOM, normalize line endings, and ensure it's not empty
+  // Normalize SRT for UTF-8 compatibility and standard line endings
   const cleanSrt = srtContent
     .replace(/^\uFEFF/, '') 
     .replace(/\r\n/g, '\n')
@@ -56,67 +56,72 @@ export const mergeVideoAndSubtitles = async (
     .trim() + '\n\n';
     
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(cleanSrt));
-  onLog(`SRT file written (${cleanSrt.length} bytes)`);
+  onLog(`SRT file written to virtual root.`);
 
-  // 2. Load CJK Font
-  // We use Noto Sans SC to ensure Chinese characters render correctly.
-  const fontUrl = 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf';
-  
-  onLog('Downloading Noto Sans SC font for hardcoding...');
-  try {
-    const fontResponse = await fetch(fontUrl);
-    if (!fontResponse.ok) throw new Error('Font download failed');
-    const fontBuffer = await fontResponse.arrayBuffer();
-    
-    // Write font file - libass will look for this
-    await ffmpegInstance.writeFile('noto.ttf', new Uint8Array(fontBuffer));
-    onLog('Font registered: noto.ttf');
-  } catch (e) {
-    onLog(`Warning: Font loading failed: ${(e as Error).message}. Characters might appear as boxes.`);
+  // 2. Load Universal Fonts (CJK + Latin)
+  const fonts = [
+    {
+      name: 'noto.ttf',
+      url: 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf'
+    },
+    {
+      name: 'noto_latin.ttf',
+      url: 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSans/NotoSans-Regular.ttf'
+    }
+  ];
+
+  for (const font of fonts) {
+    onLog(`Downloading font: ${font.name}...`);
+    try {
+      const response = await fetch(font.url);
+      if (!response.ok) throw new Error(`Failed to download ${font.name}`);
+      const buffer = await response.arrayBuffer();
+      await ffmpegInstance.writeFile(font.name, new Uint8Array(buffer));
+    } catch (e) {
+      onLog(`Warning: Font ${font.name} failed to load.`);
+    }
   }
 
   // 3. Execute Hardcoding Command
-  onLog('Burning subtitles... This will take a moment.');
+  // Using the exact parameters from your working CLI: FontName, FontSize, MarginV
+  onLog('Burning bilingual subtitles... This is a CPU-intensive local process.');
   
   try {
     /**
      * Filter Breakdown:
-     * - subtitles='subs.srt': Source SRT file (using single quotes for path safety).
-     * - fontsdir=.: Tells libass to check the local dir for noto.ttf.
-     * - force_style:
-     *    - FontName=Noto Sans SC: Matches the internal name of the font.
-     *    - FontSize=18: Matching your working CLI size.
-     *    - MarginV=20: Position from bottom.
-     *    - Outline=1: Thin outline for readability.
+     * - subtitles=subs.srt: Source file in the same directory.
+     * - fontsdir=/: Explicitly look in the root virtual folder for noto.ttf.
+     * - force_style: Exact styles from your working Windows CLI command.
      */
-    const filter = "subtitles='subs.srt':fontsdir=.:force_style='FontName=Noto Sans SC,FontSize=18,MarginV=20,Outline=1,Shadow=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'";
+    const filter = "subtitles=subs.srt:fontsdir=/:force_style='FontName=Noto Sans SC,FontSize=18,MarginV=14,Outline=1,Shadow=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'";
     
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
       '-vf', filter,
-      '-map', '0:v:0',        // Force first video stream (ignores attached thumbnails/pics)
-      '-map', '0:a?',          // Copy audio if exists
+      '-map', '0:v:0',        // Select only the first video stream (ignoring thumbnails)
+      '-map', '0:a?',          // Select audio if available
       '-c:v', 'libx264',
-      '-preset', 'ultrafast',  // Best for browser performance
+      '-preset', 'ultrafast',  // Critical for browser-based encoding speed
       '-crf', '23',           
-      '-c:a', 'copy',          // No need to re-encode audio
+      '-c:a', 'copy',          // Direct audio copy to save time
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       'output.mp4'
     ]);
   } catch (err: any) {
-    onLog(`FFmpeg Error: ${err.message}`);
+    onLog(`FFmpeg Execution Error: ${err.message}`);
     throw err;
   }
 
-  onLog('Success! Finalizing video blob...');
+  onLog('Finalizing video result...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
-  // Memory cleanup
+  // Cleanup virtual files to prevent browser memory leaks
   try {
     await ffmpegInstance.deleteFile('input.mp4');
     await ffmpegInstance.deleteFile('subs.srt');
     await ffmpegInstance.deleteFile('noto.ttf');
+    await ffmpegInstance.deleteFile('noto_latin.ttf');
     await ffmpegInstance.deleteFile('output.mp4');
   } catch (e) {}
 
