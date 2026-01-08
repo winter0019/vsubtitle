@@ -10,12 +10,11 @@ const App: React.FC = () => {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [srtFile, setSrtFile] = useState<File | null>(null);
   const [originalSrtContent, setOriginalSrtContent] = useState<string>('');
-  const [srtContent, setSrtContent] = useState<string>('');
   const [targetLanguage, setTargetLanguage] = useState('Chinese (Simplified)');
   const [status, setStatus] = useState<ProcessingStatus>({
     step: 'idle',
     progress: 0,
-    message: 'Ready to start'
+    message: 'Awaiting Inputs'
   });
   const [logs, setLogs] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(false);
@@ -34,7 +33,7 @@ const App: React.FC = () => {
     }
   }, [logs]);
 
-  // Automatic Trigger Logic: Starts processing as soon as assets are ready
+  // Unified Workflow Automation: Detects when both assets are ready
   useEffect(() => {
     const currentKey = `${videoFile?.name}-${originalSrtContent.length}-${targetLanguage}`;
     
@@ -50,13 +49,14 @@ const App: React.FC = () => {
   }, [videoFile, originalSrtContent, targetLanguage, status.step]);
 
   const addLog = (msg: string) => {
-    setLogs(prev => [...prev.slice(-100), msg]);
+    const timestamp = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setLogs(prev => [...prev.slice(-150), `[${timestamp}] ${msg}`]);
   };
 
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setVideoFile(e.target.files[0]);
-      addLog(`Asset acquired: Video (${e.target.files[0].name})`);
+      addLog(`Attached Video: ${e.target.files[0].name}`);
       if (status.step === 'completed' || status.step === 'error') setStatus({ step: 'idle', progress: 0, message: 'New asset detected...' });
     }
   };
@@ -69,8 +69,7 @@ const App: React.FC = () => {
       reader.onload = (event) => {
         const content = event.target?.result as string;
         setOriginalSrtContent(content);
-        setSrtContent(content);
-        addLog(`Asset acquired: Subtitles (${file.name})`);
+        addLog(`Attached Subtitles: ${file.name}`);
         if (status.step === 'completed' || status.step === 'error') setStatus({ step: 'idle', progress: 0, message: 'New asset detected...' });
       };
       reader.readAsText(file);
@@ -80,29 +79,30 @@ const App: React.FC = () => {
   const initDownloader = () => {
     if (!youtubeUrl.trim()) return;
     setIsFetcherActive(true);
-    addLog(`Connecting to Capture Engine for: ${youtubeUrl}`);
+    addLog(`Initiating Link Capture for: ${youtubeUrl}`);
     
     if (iframeContainerRef.current) {
       iframeContainerRef.current.innerHTML = '';
       const loader = document.createElement('div');
-      loader.className = 'flex flex-col items-center justify-center py-12 text-sky-400 font-black tracking-widest uppercase text-xs gap-4';
+      loader.className = 'flex flex-col items-center justify-center py-24 text-sky-400 font-bold tracking-widest uppercase text-xs gap-6';
       loader.innerHTML = `
-        <i class="fas fa-circle-notch fa-spin text-2xl"></i>
-        <span>Handshaking with Stream Servers...</span>
+        <i class="fas fa-circle-notch fa-spin text-3xl"></i>
+        <span>Connecting to YouTube Asset Server...</span>
       `;
       iframeContainerRef.current.appendChild(loader);
 
+      // Decoding the secure portal API
       const apiUrl = atob("aHR0cHM6Ly9wLnNhdmVub3cudG8vYXBpL2NhcmQyLz91cmw9") + encodeURIComponent(youtubeUrl);
       const iframe = document.createElement('iframe');
       iframe.setAttribute("scrolling", "no");
       iframe.setAttribute("width", "100%");
       iframe.setAttribute("height", "480px");
-      iframe.setAttribute("style", "border:none; border-radius: 1.5rem; background: transparent;");
+      iframe.setAttribute("style", "border:none; border-radius: 2rem; background: rgba(0,0,0,0.2);");
       iframe.src = apiUrl;
       
       iframe.onload = () => {
         if (loader.parentNode) loader.parentNode.removeChild(loader);
-        addLog("Capture Portal Live. Step: 1. Download MP4 (1080p) 2. Download SRT (English).");
+        addLog("Capture Portal Online. Action Required: 1. Download 1080p MP4 2. Download English SRT.");
       };
 
       iframeContainerRef.current.appendChild(iframe);
@@ -117,107 +117,106 @@ const App: React.FC = () => {
       setLogs([]);
       setShowLogs(true);
       
-      // Step 1: Gemini Translation
-      setStatus({ step: 'translating', progress: 10, message: 'Gemini 3 Pro: Synthesizing Bilingual Script...' });
-      addLog(`Auto-starting translation for ${targetLanguage}...`);
+      // Stage 1: Gemini AI Translation
+      setStatus({ step: 'translating', progress: 5, message: 'AI: Synthesizing Bilingual Script...' });
+      addLog('Agent "Gemini" is translating script to ' + targetLanguage + '...');
       const bilingualSrt = await translateSubtitles(originalSrtContent, targetLanguage);
-      setSrtContent(bilingualSrt);
-      addLog('Bilingual script generated successfully.');
+      addLog('Bilingual script finalized. Length: ' + bilingualSrt.length + ' chars.');
 
-      // Step 2: FFmpeg Merge
-      setStatus({ step: 'merging', progress: 0, message: 'FFmpeg Core: Hardcoding Subtitles...' });
-      addLog('Initiating local video rendering. Stay on this tab.');
+      // Stage 2: FFmpeg Hardware-Accelerated Merge
+      setStatus({ step: 'merging', progress: 0, message: 'Engine: Hardcoding Subtitles...' });
+      addLog('Initializing local rendering pipeline. Do not close this window.');
       const mergedBlob = await mergeVideoAndSubtitles(
         videoFile, 
         bilingualSrt, 
-        (p) => setStatus(prev => ({ ...prev, progress: p })),
+        (p) => setStatus(prev => ({ ...prev, progress: Math.max(p, 5) })),
         addLog
       );
 
       const url = URL.createObjectURL(mergedBlob);
       setResultVideoUrl(url);
-      setStatus({ step: 'completed', progress: 100, message: 'Synthesis Successful!' });
-      addLog('Bilingual video ready.');
+      setStatus({ step: 'completed', progress: 100, message: 'Export Ready!' });
+      addLog('Success: Bilingual Master Exported.');
     } catch (error: any) {
       console.error(error);
-      const errorMsg = error.message || 'Error during synthesis.';
+      const errorMsg = error.message || 'System error during synthesis.';
       setStatus({ step: 'error', progress: 0, message: errorMsg });
-      addLog(`SYSTEM ERROR: ${errorMsg}`);
+      addLog(`ENGINE FAILURE: ${errorMsg}`);
     }
   };
 
   return (
     <div className="min-h-screen p-4 md:p-8 max-w-5xl mx-auto pb-32">
-      <header className="text-center mb-16 relative">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-sky-500/10 blur-[100px] -z-10 rounded-full"></div>
-        <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-slate-800 to-slate-950 rounded-[2rem] mb-8 border border-white/5 shadow-[0_0_50px_rgba(56,189,248,0.15)] ring-1 ring-white/10">
-          <i className="fas fa-bolt text-sky-400 text-4xl"></i>
+      <header className="text-center mb-12 relative py-8">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[300px] bg-sky-500/5 blur-[120px] -z-10 rounded-full"></div>
+        <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-slate-900 to-black rounded-3xl mb-6 border border-white/10 shadow-[0_0_40px_rgba(56,189,248,0.1)]">
+          <i className="fas fa-closed-captioning text-sky-400 text-3xl"></i>
         </div>
-        <h1 className="text-6xl md:text-8xl font-black mb-4 tracking-tighter leading-none">
-          SubMerge <span className="gradient-text">AUTO</span>
+        <h1 className="text-5xl md:text-7xl font-black mb-3 tracking-tighter leading-tight italic">
+          SubMerge <span className="gradient-text">PRO</span>
         </h1>
-        <p className="text-slate-500 text-lg md:text-xl max-w-xl mx-auto font-medium tracking-tight">
-          Bilingual Video Synthesis. Zero Clicks Needed.
+        <p className="text-slate-400 text-lg md:text-xl max-w-xl mx-auto font-medium tracking-tight">
+          AI-Powered Bilingual Video Synthesis.
         </p>
       </header>
 
-      <div className="grid gap-10">
-        {/* PHASE 1: CAPTURE & ASSET ACQUISITION */}
+      <div className="grid gap-8">
+        {/* ACT 1: ASSET CAPTURE */}
         <StepCard
           number={1}
-          title="Source Capture"
-          description="Fetch assets from YouTube and drop them below."
-          isCompleted={!!videoFile && !!srtFile}
+          title="Capture Source"
+          description="Fetch from YouTube, then drag assets into the engine below."
+          isCompleted={!!videoFile && !!originalSrtContent}
           isActive={status.step === 'idle' || status.step === 'error' || status.step === 'completed'}
         >
           <div className="space-y-8">
-            <div className="bg-slate-900/50 p-6 rounded-[2rem] border border-white/5 shadow-2xl">
-              <label className="text-[10px] font-black uppercase text-sky-500 tracking-[0.3em] mb-4 block">1. YouTube Link</label>
-              <div className="flex flex-col sm:flex-row gap-4">
+            <div className="bg-slate-900/40 p-5 rounded-3xl border border-white/5 shadow-2xl backdrop-blur-md">
+              <label className="text-[10px] font-bold uppercase text-sky-500 tracking-[0.2em] mb-3 block opacity-80">Target YouTube URL</label>
+              <div className="flex flex-col sm:flex-row gap-3">
                 <input
                   type="text"
                   value={youtubeUrl}
                   onChange={(e) => setYoutubeUrl(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && initDownloader()}
-                  placeholder="Paste URL here..."
-                  className="flex-1 bg-black border border-white/10 rounded-2xl px-6 py-4 focus:outline-none focus:ring-2 focus:ring-sky-500 text-sm transition-all placeholder:text-slate-700"
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  className="flex-1 bg-black border border-white/5 rounded-2xl px-6 py-4 focus:outline-none focus:ring-2 focus:ring-sky-500/50 text-sm transition-all placeholder:text-slate-800"
                 />
                 <button 
                   onClick={initDownloader}
-                  className="bg-white text-black hover:bg-slate-200 px-10 py-4 rounded-2xl font-black text-sm transition-all flex items-center justify-center gap-3 shadow-2xl active:scale-95"
+                  className="bg-sky-500 hover:bg-sky-400 text-white px-8 py-4 rounded-2xl font-black text-sm transition-all flex items-center justify-center gap-3 shadow-lg active:scale-95"
                 >
-                  <i className="fas fa-cloud-download-alt"></i> Fetch
+                  <i className="fas fa-rocket"></i> Launch Portal
                 </button>
               </div>
             </div>
 
             {isFetcherActive && (
               <div className="animate-in fade-in slide-in-from-top-4 duration-700">
-                <div ref={iframeContainerRef} className="overflow-hidden bg-slate-950/50 rounded-[2.5rem] border border-white/5 shadow-inner mb-8 min-h-[400px]"></div>
+                <div ref={iframeContainerRef} className="overflow-hidden bg-black/60 rounded-[2rem] border border-white/5 shadow-2xl mb-8 min-h-[420px]"></div>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div 
                     onClick={() => fileInputRef.current?.click()}
-                    className={`group border-2 border-dashed rounded-[2.5rem] p-10 text-center cursor-pointer transition-all ${videoFile ? 'border-green-500/50 bg-green-500/5' : 'border-slate-800 hover:border-sky-500/50 hover:bg-sky-500/5 bg-slate-900/40'}`}
+                    className={`group border-2 border-dashed rounded-[2rem] p-8 text-center cursor-pointer transition-all ${videoFile ? 'border-green-500/40 bg-green-500/5' : 'border-slate-800 hover:border-sky-500/40 hover:bg-sky-500/5 bg-slate-900/30'}`}
                   >
                     <input type="file" ref={fileInputRef} onChange={handleVideoUpload} accept="video/mp4" className="hidden" />
-                    <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-all duration-500 ${videoFile ? 'bg-green-500/20 text-green-400 rotate-[360deg]' : 'bg-slate-800 group-hover:bg-sky-500/20 text-slate-500 group-hover:text-sky-400'}`}>
-                      <i className={`fas ${videoFile ? 'fa-check' : 'fa-video'} text-2xl`}></i>
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 transition-all duration-700 ${videoFile ? 'bg-green-500/20 text-green-400 rotate-12' : 'bg-slate-800 group-hover:bg-sky-500/20 text-slate-500 group-hover:text-sky-400'}`}>
+                      <i className={`fas ${videoFile ? 'fa-check-circle' : 'fa-film'} text-xl`}></i>
                     </div>
-                    <p className="text-xs font-black text-slate-300 uppercase tracking-[0.2em]">Drop MP4</p>
-                    <p className="text-[10px] text-slate-600 mt-2 truncate max-w-[180px] mx-auto font-medium">{videoFile ? videoFile.name : 'Select video'}</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{videoFile ? 'Video Locked' : 'Drop Video (MP4)'}</p>
+                    <p className="text-[10px] text-slate-600 mt-1 truncate max-w-[150px] mx-auto">{videoFile ? videoFile.name : 'Awaiting file...'}</p>
                   </div>
 
                   <div 
                     onClick={() => srtInputRef.current?.click()}
-                    className={`group border-2 border-dashed rounded-[2.5rem] p-10 text-center cursor-pointer transition-all ${srtFile ? 'border-green-500/50 bg-green-500/5' : 'border-slate-800 hover:border-sky-500/50 hover:bg-sky-500/5 bg-slate-900/40'}`}
+                    className={`group border-2 border-dashed rounded-[2rem] p-8 text-center cursor-pointer transition-all ${originalSrtContent ? 'border-green-500/40 bg-green-500/5' : 'border-slate-800 hover:border-sky-500/40 hover:bg-sky-500/5 bg-slate-900/30'}`}
                   >
                     <input type="file" ref={srtInputRef} onChange={handleSrtUpload} accept=".srt" className="hidden" />
-                    <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-all duration-500 ${srtFile ? 'bg-green-500/20 text-green-400 rotate-[360deg]' : 'bg-slate-800 group-hover:bg-sky-500/20 text-slate-500 group-hover:text-sky-400'}`}>
-                      <i className={`fas ${srtFile ? 'fa-check' : 'fa-closed-captioning'} text-2xl`}></i>
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 transition-all duration-700 ${originalSrtContent ? 'bg-green-500/20 text-green-400 -rotate-12' : 'bg-slate-800 group-hover:bg-sky-500/20 text-slate-500 group-hover:text-sky-400'}`}>
+                      <i className={`fas ${originalSrtContent ? 'fa-check-circle' : 'fa-align-left'} text-xl`}></i>
                     </div>
-                    <p className="text-xs font-black text-slate-300 uppercase tracking-[0.2em]">Drop SRT</p>
-                    <p className="text-[10px] text-slate-600 mt-2 truncate max-w-[180px] mx-auto font-medium">{srtFile ? srtFile.name : 'Select script'}</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{originalSrtContent ? 'Script Locked' : 'Drop Script (SRT)'}</p>
+                    <p className="text-[10px] text-slate-600 mt-1 truncate max-w-[150px] mx-auto">{srtFile ? srtFile.name : 'Awaiting file...'}</p>
                   </div>
                 </div>
               </div>
@@ -225,29 +224,24 @@ const App: React.FC = () => {
           </div>
         </StepCard>
 
-        {/* PHASE 2: AUTOMATED ENGINE */}
+        {/* ACT 2: SYNTHESIS ENGINE */}
         <StepCard
           number={2}
-          title="Engine Status"
-          description="Config and live synthesis tracking."
+          title="Synthesis Core"
+          description="Automatic AI translation and subtitle burning."
           isCompleted={status.step === 'completed'}
           isActive={!!videoFile && !!originalSrtContent}
         >
-          <div className="space-y-10">
-            <div className="flex flex-col gap-5">
-              <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.3em]">Translation Language</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {['Chinese (Simplified)', 'Japanese', 'Korean', 'Spanish', 'French', 'German', 'Russian', 'Arabic'].map(lang => (
+          <div className="space-y-8">
+            <div className="bg-slate-900/20 p-6 rounded-3xl border border-white/5">
+              <label className="text-[10px] font-bold uppercase text-slate-500 tracking-[0.2em] mb-4 block">Target Language</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {['Chinese (Simplified)', 'Japanese', 'Korean', 'Spanish', 'French', 'German', 'Portuguese', 'Arabic'].map(lang => (
                   <button
                     key={lang}
-                    onClick={() => {
-                      setTargetLanguage(lang);
-                      if (status.step === 'completed' || status.step === 'error') {
-                        setStatus({ step: 'idle', progress: 0, message: 'Language updated...' });
-                      }
-                    }}
+                    onClick={() => setTargetLanguage(lang)}
                     disabled={status.step !== 'idle' && status.step !== 'error' && status.step !== 'completed'}
-                    className={`px-4 py-4 rounded-2xl text-[10px] font-black transition-all border-2 uppercase tracking-widest ${targetLanguage === lang ? 'bg-sky-500 border-sky-400 text-white shadow-xl shadow-sky-500/20 scale-[1.05]' : 'bg-slate-900/50 border-white/5 text-slate-500 hover:border-slate-700 hover:text-slate-300'}`}
+                    className={`px-3 py-3 rounded-xl text-[9px] font-black transition-all border-2 uppercase tracking-widest ${targetLanguage === lang ? 'bg-sky-500 border-sky-400 text-white shadow-xl' : 'bg-slate-900/50 border-white/5 text-slate-600 hover:text-slate-300'}`}
                   >
                     {lang}
                   </button>
@@ -255,55 +249,41 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {status.step === 'idle' ? (
-              <div className="flex flex-col items-center justify-center p-12 bg-slate-900/30 rounded-[2.5rem] border border-white/5">
-                <i className="fas fa-hourglass-half text-slate-700 text-3xl mb-4 animate-pulse"></i>
-                <p className="text-[10px] uppercase font-black tracking-[0.4em] text-slate-500 text-center">
-                  {(!videoFile || !originalSrtContent) ? 'Awaiting Assets for Auto-Start' : 'Ready to Launch'}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-700">
-                <div className="bg-black/50 border border-white/5 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden backdrop-blur-xl">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-white/5">
-                    <div className="h-full bg-gradient-to-r from-sky-500 to-indigo-500 transition-all duration-500 shadow-[0_0_15px_rgba(56,189,248,0.5)]" style={{ width: `${status.progress}%` }}></div>
+            {status.step !== 'idle' && (
+              <div className="animate-in slide-in-from-bottom-4 duration-700 space-y-6">
+                <div className="bg-black/80 border border-white/10 rounded-[2rem] p-8 shadow-inner relative overflow-hidden">
+                  <div className="absolute bottom-0 left-0 w-full h-1 bg-white/5">
+                    <div className="h-full bg-sky-500 transition-all duration-300 shadow-[0_0_20px_rgba(56,189,248,0.8)]" style={{ width: `${status.progress}%` }}></div>
                   </div>
-                  <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-                    <div className="flex items-center gap-6">
-                      <div className="w-16 h-16 rounded-[1.2rem] bg-sky-500/10 flex items-center justify-center text-sky-400 border border-sky-500/20">
-                        <i className={`fas ${status.step === 'translating' ? 'fa-language' : 'fa-atom'} fa-spin text-2xl`}></i>
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-5">
+                      <div className="w-12 h-12 rounded-xl bg-sky-500/10 flex items-center justify-center text-sky-400 border border-sky-500/20">
+                        <i className={`fas ${status.step === 'merging' ? 'fa-microchip' : 'fa-brain'} fa-spin text-xl`}></i>
                       </div>
                       <div>
-                        <span className="text-2xl font-black text-white block tracking-tighter">{status.message}</span>
-                        <div className="flex items-center gap-3 mt-1">
-                          <span className="text-[10px] uppercase font-black text-slate-500 tracking-[0.2em]">Automated Workflow</span>
-                          <span className="h-1 w-1 rounded-full bg-sky-500 animate-pulse"></span>
-                          <span className="text-[10px] uppercase font-black text-sky-500/70 tracking-[0.2em]">{status.step}</span>
-                        </div>
+                        <h4 className="text-xl font-bold text-white tracking-tight">{status.message}</h4>
+                        <p className="text-[10px] uppercase font-bold text-slate-500 tracking-widest mt-1">
+                          Phase: <span className="text-sky-500">{status.step}</span>
+                        </p>
                       </div>
                     </div>
-                    <span className="text-5xl font-black font-mono text-sky-400 tabular-nums">{status.progress}%</span>
+                    <div className="text-4xl font-black text-sky-400 italic tabular-nums">{status.progress}%</div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between px-4">
+                <div className="flex items-center justify-between px-2">
                    <button 
                     onClick={() => setShowLogs(!showLogs)}
-                    className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors uppercase font-black tracking-[0.3em] flex items-center gap-4"
+                    className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors uppercase font-bold tracking-[0.2em] flex items-center gap-2"
                   >
-                    <i className={`fas ${showLogs ? 'fa-terminal' : 'fa-terminal opacity-30'}`}></i>
-                    {showLogs ? 'Hide Engine Logs' : 'View Engine Logs'}
+                    <i className="fas fa-terminal opacity-50"></i>
+                    {showLogs ? 'Hide System Logs' : 'Show System Logs'}
                   </button>
-                  {status.step === 'merging' && (
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] text-sky-500 font-black uppercase tracking-widest">Rendering Locally...</span>
-                    </div>
-                  )}
                 </div>
 
                 {showLogs && (
-                  <div className="bg-black rounded-[2.5rem] p-8 h-56 overflow-y-auto font-mono text-[11px] text-slate-600 border border-white/5 custom-scrollbar shadow-inner animate-in fade-in zoom-in duration-500 leading-loose">
-                    {logs.map((log, i) => <div key={i} className="mb-2 border-l border-slate-900 pl-4">{log}</div>)}
+                  <div className="bg-black/90 rounded-2xl p-6 h-48 overflow-y-auto font-mono text-[10px] text-sky-700/80 border border-white/5 custom-scrollbar shadow-2xl leading-relaxed animate-in fade-in slide-in-from-top-2">
+                    {logs.map((log, i) => <div key={i} className="mb-1">{log}</div>)}
                     <div ref={logEndRef} />
                   </div>
                 )}
@@ -312,35 +292,35 @@ const App: React.FC = () => {
           </div>
         </StepCard>
 
-        {/* PHASE 3: FINAL EXPORT */}
+        {/* ACT 3: EXPORT MASTER */}
         {status.step === 'completed' && resultVideoUrl && (
           <StepCard
             number={3}
             title="Export Master"
-            description="Synthesis complete. Assets ready for use."
+            description="Synthesis complete. Ready for distribution."
             isCompleted={true}
             isActive={true}
           >
-            <div className="space-y-10 animate-in zoom-in slide-in-from-bottom-10 duration-1000">
-              <div className="aspect-video rounded-[3rem] overflow-hidden bg-black border border-white/5 shadow-[0_50px_100px_rgba(0,0,0,0.8)] relative group ring-1 ring-white/10">
+            <div className="space-y-8 animate-in zoom-in duration-700">
+              <div className="aspect-video rounded-[2rem] overflow-hidden bg-black border border-white/10 shadow-2xl relative group">
                 <video controls className="w-full h-full shadow-2xl">
                    <source src={resultVideoUrl} type="video/mp4" />
                 </video>
               </div>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <a 
                   href={resultVideoUrl}
-                  download={`SubMerge_${videoFile?.name || 'bilingual.mp4'}`}
-                  className="bg-white text-black hover:bg-slate-200 py-7 rounded-3xl font-black text-sm uppercase tracking-[0.3em] text-center transition-all shadow-2xl flex items-center justify-center gap-4 active:scale-95"
+                  download={`SubMerge_PRO_${videoFile?.name || 'master.mp4'}`}
+                  className="bg-white text-black hover:bg-slate-200 py-6 rounded-2xl font-black text-xs uppercase tracking-[0.2em] text-center transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95"
                 >
-                  Download Master <i className="fas fa-file-video text-lg"></i>
+                  <i className="fas fa-file-export"></i> Download Master
                 </a>
                 <button 
                   onClick={() => window.location.reload()}
-                  className="bg-slate-950 hover:bg-slate-800 py-7 rounded-3xl font-black text-sm uppercase tracking-[0.3em] text-center border border-white/5 transition-all flex items-center justify-center gap-4 active:scale-95"
+                  className="bg-slate-900 hover:bg-slate-800 text-slate-400 py-6 rounded-2xl font-black text-xs uppercase tracking-[0.2em] text-center border border-white/5 transition-all flex items-center justify-center gap-3 active:scale-95"
                 >
-                  Clear & Restart <i className="fas fa-redo text-lg"></i>
+                  <i className="fas fa-redo-alt"></i> New Session
                 </button>
               </div>
             </div>
@@ -348,14 +328,14 @@ const App: React.FC = () => {
         )}
       </div>
 
-      <footer className="mt-32 pt-16 border-t border-white/5 text-center opacity-30 group hover:opacity-100 transition-opacity duration-500">
-        <p className="text-[10px] uppercase font-black tracking-[0.5em] text-slate-500 mb-8">
-          SubMerge Engine v2.5 • Full Auto-Synthesis Mode
+      <footer className="mt-24 pt-12 border-t border-white/5 text-center opacity-40">
+        <p className="text-[9px] uppercase font-bold tracking-[0.4em] text-slate-600 mb-6">
+          SubMerge AI Engine v2.8 • Optimized for Chromium
         </p>
-        <div className="flex justify-center gap-14 grayscale hover:grayscale-0 transition-all duration-700">
-           <i className="fab fa-google text-3xl"></i>
-           <i className="fab fa-youtube text-3xl"></i>
-           <i className="fas fa-shield-alt text-3xl"></i>
+        <div className="flex justify-center gap-10 opacity-30">
+           <i className="fab fa-google text-2xl"></i>
+           <i className="fab fa-youtube text-2xl"></i>
+           <i className="fas fa-shield-halved text-2xl"></i>
         </div>
       </footer>
     </div>
