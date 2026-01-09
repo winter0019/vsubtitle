@@ -24,7 +24,7 @@ export const getFFmpeg = async (onLog?: (msg: string) => void) => {
 };
 
 /**
- * Merges video and subtitles with precise font rendering.
+ * Merges video and subtitles with precise font rendering matching successful local command.
  */
 export const mergeVideoAndSubtitles = async (
   videoFile: File,
@@ -48,7 +48,7 @@ export const mergeVideoAndSubtitles = async (
   const videoData = await fetchFile(videoFile);
   await ffmpegInstance.writeFile('input.mp4', videoData);
   
-  // Clean SRT for absolute compatibility (Remove BOM, normalize line endings)
+  // Normalize SRT content for strict compatibility
   const cleanSrt = srtContent
     .replace(/^\uFEFF/, '') 
     .replace(/\r\n/g, '\n')
@@ -58,11 +58,11 @@ export const mergeVideoAndSubtitles = async (
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(cleanSrt));
 
   // 2. Load Universal Font (Noto Sans SC)
-  // We use this because it supports both English and CJK characters (Chinese, Japanese, Korean)
+  // Renaming to match expected internal metadata for better libass resolution in WASM
   const FONT_URL = 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf';
-  const FONT_NAME = 'noto.ttf';
+  const FONT_NAME = 'NotoSansSC-Regular.ttf';
 
-  onLog('Registering Bilingual Typography Engine...');
+  onLog('Registering Typography Engine (Noto Sans SC)...');
   try {
     const fontRes = await fetch(FONT_URL);
     if (!fontRes.ok) throw new Error("Font fetch failed");
@@ -70,7 +70,7 @@ export const mergeVideoAndSubtitles = async (
     await ffmpegInstance.writeFile(FONT_NAME, new Uint8Array(fontBuffer));
     onLog('Typography Engine Ready.');
   } catch (e) {
-    onLog('Warning: Font failed to load. Falling back to system fonts.');
+    onLog('Warning: Font failed to load. Falling back to default.');
   }
 
   // 3. Execute Hardcoding Command
@@ -78,20 +78,19 @@ export const mergeVideoAndSubtitles = async (
   
   try {
     /**
-     * Filter Breakdown:
-     * - subtitles='subs.srt': Source file in virtual FS.
-     * - fontsdir=/: Look for fonts in the root.
-     * - force_style: Precise styling for bilingual clarity.
+     * User's successful local command:
+     * -vf "subtitles='subs.srt':force_style='FontName=Noto Sans SC,FontSize=18,MarginV=14,Outline=2,Shadow=1'"
      */
-    const style = "FontName=Noto Sans SC Regular,FontSize=18,MarginV=18,Outline=1,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000";
+    const style = "FontName=Noto Sans SC,FontSize=18,MarginV=14,Outline=2,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000";
+    // We use fontsdir=/ to ensure libass picks up the .ttf we just wrote
     const filter = `subtitles='subs.srt':fontsdir=/:force_style='${style}'`;
     
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
       '-vf', filter,
       '-c:v', 'libx264',
-      '-preset', 'ultrafast', // Speed is prioritized for browser
-      '-crf', '25',           // Balanced quality
+      '-preset', 'ultrafast', 
+      '-crf', '23',           // Matched to common high-quality default
       '-c:a', 'copy',          // Preserve original audio
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
@@ -105,7 +104,7 @@ export const mergeVideoAndSubtitles = async (
   onLog('Exporting Master Stream...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
-  // Cleanup to free up browser memory
+  // Cleanup
   try {
     await ffmpegInstance.deleteFile('input.mp4');
     await ffmpegInstance.deleteFile('subs.srt');
