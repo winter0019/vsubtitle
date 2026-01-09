@@ -31,8 +31,15 @@
           0% { background-position: -200% 0; }
           100% { background-position: 200% 0; }
         }
+        @keyframes pulse-subtle {
+          0%, 100% { border-color: rgba(56, 189, 248, 0.2); box-shadow: 0 0 10px rgba(56, 189, 248, 0.05); }
+          50% { border-color: rgba(56, 189, 248, 0.5); box-shadow: 0 0 25px rgba(56, 189, 248, 0.2); }
+        }
         .animate-shimmer {
           animation: shimmer 2.5s infinite linear;
+        }
+        .animate-pulse-subtle {
+          animation: pulse-subtle 2s infinite ease-in-out;
         }
         .custom-scrollbar::-webkit-scrollbar {
           width: 4px;

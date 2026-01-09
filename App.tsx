@@ -29,7 +29,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      (logEndRef.current as any).scrollIntoView({ behavior: 'smooth' });
     }
   }, [logs]);
 
@@ -54,9 +54,10 @@ const App: React.FC = () => {
   };
 
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setVideoFile(e.target.files[0]);
-      addLog(`Attached Video: ${e.target.files[0].name}`);
+    const target = e.target as any;
+    if (target.files && target.files[0]) {
+      setVideoFile(target.files[0]);
+      addLog(`Attached Video: ${target.files[0].name}`);
       if (status.step === 'completed' || status.step === 'error') {
         setStatus({ step: 'idle', progress: 0, message: 'Ready for new synthesis' });
       }
@@ -64,8 +65,9 @@ const App: React.FC = () => {
   };
 
   const handleSrtUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
+    const target = e.target as any;
+    if (target.files && target.files[0]) {
+      const file = target.files[0];
       setSrtFile(file);
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -86,17 +88,18 @@ const App: React.FC = () => {
     addLog(`Initiating capture for: ${youtubeUrl}`);
     
     if (iframeContainerRef.current) {
-      iframeContainerRef.current.innerHTML = '';
-      const loader = document.createElement('div');
+      const container = iframeContainerRef.current as any;
+      container.innerHTML = '';
+      const loader = (window as any).document.createElement('div');
       loader.className = 'flex flex-col items-center justify-center py-24 text-sky-400 font-bold uppercase text-xs gap-4 animate-pulse';
       loader.innerHTML = `
         <i class="fas fa-spinner fa-spin text-4xl"></i>
         <span>Loading Capture Portal...</span>
       `;
-      iframeContainerRef.current.appendChild(loader);
+      container.appendChild(loader);
 
       const apiUrl = atob("aHR0cHM6Ly9wLnNhdmVub3cudG8vYXBpL2NhcmQyLz91cmw9") + encodeURIComponent(youtubeUrl);
-      const iframe = document.createElement('iframe');
+      const iframe = (window as any).document.createElement('iframe');
       iframe.setAttribute("scrolling", "no");
       iframe.setAttribute("width", "100%");
       iframe.setAttribute("height", "480px");
@@ -108,7 +111,7 @@ const App: React.FC = () => {
         addLog("Portal Ready. Step 1: Download 1080p MP4. Step 2: Download English SRT.");
       };
 
-      iframeContainerRef.current.appendChild(iframe);
+      container.appendChild(iframe);
     }
   };
 
@@ -170,7 +173,7 @@ const App: React.FC = () => {
               <input
                 type="text"
                 value={youtubeUrl}
-                onChange={(e) => setYoutubeUrl(e.target.value)}
+                onChange={(e) => setYoutubeUrl((e.target as any).value)}
                 onKeyDown={(e) => e.key === 'Enter' && initDownloader()}
                 placeholder="YouTube URL..."
                 className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-6 py-4 focus:ring-2 focus:ring-sky-500/50 outline-none transition-all"
@@ -189,8 +192,8 @@ const App: React.FC = () => {
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-3xl p-10 text-center cursor-pointer transition-all ${videoFile ? 'border-green-500 bg-green-500/5' : 'border-slate-800 hover:border-sky-500 hover:bg-sky-500/5'}`}
+                    onClick={() => (fileInputRef.current as any)?.click()}
+                    className={`border-2 border-dashed rounded-3xl p-10 text-center cursor-pointer transition-all ${videoFile ? 'border-green-500 bg-green-500/5 shadow-[0_0_20px_rgba(34,197,94,0.1)]' : 'border-slate-800 hover:border-sky-500 hover:bg-sky-500/5 animate-pulse-subtle shadow-[0_0_30px_rgba(56,189,248,0.05)]'}`}
                   >
                     <input type="file" ref={fileInputRef} onChange={handleVideoUpload} accept="video/mp4" className="hidden" />
                     <i className={`fas ${videoFile ? 'fa-check-circle text-green-500' : 'fa-video text-slate-600'} text-3xl mb-4`}></i>
@@ -199,8 +202,8 @@ const App: React.FC = () => {
                   </div>
 
                   <div 
-                    onClick={() => srtInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-3xl p-10 text-center cursor-pointer transition-all ${originalSrtContent ? 'border-green-500 bg-green-500/5' : 'border-slate-800 hover:border-sky-500 hover:bg-sky-500/5'}`}
+                    onClick={() => (srtInputRef.current as any)?.click()}
+                    className={`border-2 border-dashed rounded-3xl p-10 text-center cursor-pointer transition-all ${originalSrtContent ? 'border-green-500 bg-green-500/5 shadow-[0_0_20px_rgba(34,197,94,0.1)]' : 'border-slate-800 hover:border-sky-500 hover:bg-sky-500/5 animate-pulse-subtle shadow-[0_0_30px_rgba(56,189,248,0.05)]'}`}
                   >
                     <input type="file" ref={srtInputRef} onChange={handleSrtUpload} accept=".srt" className="hidden" />
                     <i className={`fas ${originalSrtContent ? 'fa-check-circle text-green-500' : 'fa-file-alt text-slate-600'} text-3xl mb-4`}></i>
@@ -228,7 +231,7 @@ const App: React.FC = () => {
                   key={lang}
                   onClick={() => setTargetLanguage(lang)}
                   disabled={status.step !== 'idle' && status.step !== 'completed'}
-                  className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all ${targetLanguage === lang ? 'bg-sky-500 text-white shadow-xl' : 'bg-slate-900 text-slate-500 border border-white/5'}`}
+                  className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all ${targetLanguage === lang ? 'bg-sky-500 text-white shadow-xl scale-105' : 'bg-slate-900 text-slate-500 border border-white/5 hover:text-slate-300'}`}
                 >
                   {lang.toUpperCase()}
                 </button>
@@ -278,13 +281,13 @@ const App: React.FC = () => {
                 <a 
                   href={resultVideoUrl}
                   download={`SubMerge_${videoFile?.name || 'video.mp4'}`}
-                  className="flex-1 bg-white text-black py-5 rounded-2xl font-black text-xs uppercase tracking-widest text-center shadow-2xl active:scale-95 transition-all"
+                  className="flex-1 bg-white text-black py-5 rounded-2xl font-black text-xs uppercase tracking-widest text-center shadow-2xl active:scale-95 transition-all hover:bg-slate-200"
                 >
                   <i className="fas fa-download mr-2"></i> Download Master
                 </a>
                 <button 
-                  onClick={() => window.location.reload()}
-                  className="px-8 bg-slate-900 text-slate-500 rounded-2xl border border-white/5 hover:text-white transition-all"
+                  onClick={() => (window as any).location.reload()}
+                  className="px-8 bg-slate-900 text-slate-500 rounded-2xl border border-white/5 hover:text-white transition-all active:scale-95"
                 >
                   <i className="fas fa-redo"></i>
                 </button>
