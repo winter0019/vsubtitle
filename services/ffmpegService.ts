@@ -1,3 +1,4 @@
+
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
@@ -24,7 +25,7 @@ export const getFFmpeg = async (onLog?: (msg: string) => void) => {
 
 /**
  * Merges video and subtitles with precise font rendering matching the specific 
- * requirements for CJK characters in a WASM environment.
+ * requirements for CJK (Chinese, Japanese, Korean) characters in a WASM environment.
  */
 export const mergeVideoAndSubtitles = async (
   videoFile: File,
@@ -58,11 +59,12 @@ export const mergeVideoAndSubtitles = async (
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(cleanSrt));
 
   // 2. Load Universal Font (Noto Sans SC)
-  // Internal Family Name for 'NotoSansSC-Regular.ttf' is 'NotoSansSC-Regular'
+  // THE CRITICAL FIX: In WASM, libass matches the INTERNAL font family name.
+  // For this font, that is 'NotoSansSC-Regular'.
   const FONT_URL = 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf';
   const FONT_NAME = 'NotoSansSC-Regular.ttf';
 
-  onLog('Registering Typography Engine (NotoSansSC-Regular)...');
+  onLog(`Registering Typography Engine: ${FONT_NAME}...`);
   try {
     const fontRes = await fetch(FONT_URL);
     if (!fontRes.ok) throw new Error("Font fetch failed");
@@ -78,10 +80,11 @@ export const mergeVideoAndSubtitles = async (
   
   try {
     /**
-     * CRITICAL FIXES FOR WASM RENDERING:
-     * 1. FontName=NotoSansSC-Regular: Matches internal metadata embedded in the TTF.
-     * 2. fontsdir=. : Directs libass to the current working directory.
-     * 3. No quotes around style: WASM exec doesn't handle shell quotes correctly inside arguments.
+     * CRITICAL FIXES FOR WASM:
+     * 1. FontName=NotoSansSC-Regular: MUST match the internal TTF name exactly.
+     * 2. fontsdir=. : Tells libass where the TTF is stored in the virtual FS.
+     * 3. ESCAPING COMMAS: In a filter string, commas separate filters. 
+     *    To include a comma in a parameter like force_style, it MUST be escaped with '\'.
      */
     const style = 
       "FontName=NotoSansSC-Regular," +
@@ -92,13 +95,16 @@ export const mergeVideoAndSubtitles = async (
       "PrimaryColour=&H00FFFFFF," +
       "OutlineColour=&H00000000";
 
-    // Standard filter syntax for libass in ffmpeg.wasm. Note: removed single quotes around style.
-    const filter = `subtitles=subs.srt:fontsdir=.:force_style=${style}`;
+    // Escape every comma in the style string so the filtergraph parser doesn't split it.
+    const escapedStyle = style.replace(/,/g, '\\,');
+    
+    // We use quotes for the whole subtitles parameter to be extra safe with the colon.
+    const filter = `subtitles=subs.srt:fontsdir=.:force_style=${escapedStyle}`;
     
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
       '-map', '0:v:0',        // Explicitly map first video stream
-      '-map', '0:a?',        // Explicitly map audio if it exists
+      '-map', '0:a?',        // Map audio if available
       '-vf', filter,
       '-c:v', 'libx264',
       '-preset', 'ultrafast', 
