@@ -59,7 +59,7 @@ export const mergeVideoAndSubtitles = async (
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(cleanSrt));
 
   // 2. Load Universal Font (Noto Sans SC)
-  // We use the exact internal family name expected by libass in the WASM environment.
+  // Internal Family Name is 'Noto Sans SC Regular'
   const FONT_URL = 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf';
   const FONT_NAME = 'NotoSansSC-Regular.ttf';
 
@@ -79,14 +79,22 @@ export const mergeVideoAndSubtitles = async (
   
   try {
     /**
-     * CRITICAL SETTINGS FOR BILINGUAL RENDERING:
-     * - FontName=Noto Sans SC Regular: This is the internal family name of the .ttf.
-     * - fontsdir=. : Tells libass to search the current virtual directory for font files.
-     * - force_style: Precise typography controls for bilingual clarity.
+     * CRITICAL FIXES FOR WASM RENDERING:
+     * 1. FontName='Noto Sans SC Regular': Must match internal font family metadata.
+     * 2. fontsdir=. : Tells libass to look in the current virtual directory.
+     * 3. Style: Matched to user's high-visibility successful local command.
      */
-    const style = "FontName=Noto Sans SC Regular,FontSize=18,MarginV=14,Outline=2,Shadow=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000";
-    // Important: Use single quotes inside the filter string carefully
-    const filter = `subtitles='subs.srt':fontsdir='.' :force_style='${style}'`;
+    const style = 
+      "FontName=Noto Sans SC Regular," +
+      "FontSize=18," +
+      "MarginV=14," +
+      "Outline=2," +
+      "Shadow=1," +
+      "PrimaryColour=&H00FFFFFF," +
+      "OutlineColour=&H00000000";
+
+    // Standard filter syntax for libass in ffmpeg.wasm
+    const filter = `subtitles=subs.srt:fontsdir=.:force_style='${style}'`;
     
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
@@ -107,7 +115,7 @@ export const mergeVideoAndSubtitles = async (
   onLog('Exporting Master Stream...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
-  // Cleanup to free browser memory
+  // Cleanup
   try {
     await ffmpegInstance.deleteFile('input.mp4');
     await ffmpegInstance.deleteFile('subs.srt');
