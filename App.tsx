@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ProcessingStatus, TranslationModel } from './types.ts';
 import { translateSubtitles } from './services/geminiService.ts';
@@ -17,7 +16,6 @@ const App: React.FC = () => {
     message: 'Awaiting Inputs'
   });
   const [logs, setLogs] = useState<string[]>([]);
-  const [showLogs, setShowLogs] = useState(false);
   const [resultVideoUrl, setResultVideoUrl] = useState<string | null>(null);
   const [isFetcherActive, setIsFetcherActive] = useState(false);
 
@@ -121,7 +119,6 @@ const App: React.FC = () => {
     try {
       setResultVideoUrl(null);
       setLogs([]);
-      setShowLogs(true);
       
       setStatus({ step: 'translating', progress: 5, message: 'AI: Translating Scripts...' });
       addLog(`Translating script to ${targetLanguage}...`);
@@ -129,7 +126,7 @@ const App: React.FC = () => {
       addLog('Bilingual translation ready.');
 
       setStatus({ step: 'merging', progress: 0, message: 'Engine: Synthesizing Master...' });
-      addLog('Starting burning process with Noto Sans SC...');
+      addLog('Starting burning process with Noto Sans SC Regular...');
       const mergedBlob = await mergeVideoAndSubtitles(
         videoFile, 
         bilingualSrt, 
@@ -158,7 +155,6 @@ const App: React.FC = () => {
       </header>
 
       <div className="grid gap-12">
-        {/* STEP 1: CAPTURE */}
         <StepCard
           number={1}
           title="Source Assets"
@@ -218,7 +214,6 @@ const App: React.FC = () => {
           </div>
         </StepCard>
 
-        {/* STEP 2: SYNTHESIS */}
         <StepCard
           number={2}
           title="AI Synthesis"
@@ -271,7 +266,6 @@ const App: React.FC = () => {
           </div>
         </StepCard>
 
-        {/* STEP 3: RESULT */}
         {status.step === 'completed' && resultVideoUrl && (
           <StepCard
             number={3}

@@ -1,4 +1,3 @@
-
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
@@ -25,7 +24,7 @@ export const getFFmpeg = async (onLog?: (msg: string) => void) => {
 
 /**
  * Merges video and subtitles with precise font rendering matching the specific 
- * requirements for CJK (Chinese, Japanese, Korean) characters in a WASM environment.
+ * requirements for CJK characters in a WASM environment.
  */
 export const mergeVideoAndSubtitles = async (
   videoFile: File,
@@ -59,11 +58,11 @@ export const mergeVideoAndSubtitles = async (
   await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(cleanSrt));
 
   // 2. Load Universal Font (Noto Sans SC)
-  // Internal Family Name is 'Noto Sans SC Regular'
+  // Internal Family Name for 'NotoSansSC-Regular.ttf' is 'NotoSansSC-Regular'
   const FONT_URL = 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf';
   const FONT_NAME = 'NotoSansSC-Regular.ttf';
 
-  onLog('Registering Typography Engine (Noto Sans SC Regular)...');
+  onLog('Registering Typography Engine (NotoSansSC-Regular)...');
   try {
     const fontRes = await fetch(FONT_URL);
     if (!fontRes.ok) throw new Error("Font fetch failed");
@@ -80,12 +79,12 @@ export const mergeVideoAndSubtitles = async (
   try {
     /**
      * CRITICAL FIXES FOR WASM RENDERING:
-     * 1. FontName='Noto Sans SC Regular': Must match internal font family metadata.
-     * 2. fontsdir=. : Tells libass to look in the current virtual directory.
-     * 3. Style: Matched to user's high-visibility successful local command.
+     * 1. FontName=NotoSansSC-Regular: Matches internal metadata embedded in the TTF.
+     * 2. fontsdir=. : Directs libass to the current working directory.
+     * 3. No quotes around style: WASM exec doesn't handle shell quotes correctly inside arguments.
      */
     const style = 
-      "FontName=Noto Sans SC Regular," +
+      "FontName=NotoSansSC-Regular," +
       "FontSize=18," +
       "MarginV=14," +
       "Outline=2," +
@@ -93,11 +92,13 @@ export const mergeVideoAndSubtitles = async (
       "PrimaryColour=&H00FFFFFF," +
       "OutlineColour=&H00000000";
 
-    // Standard filter syntax for libass in ffmpeg.wasm
-    const filter = `subtitles=subs.srt:fontsdir=.:force_style='${style}'`;
+    // Standard filter syntax for libass in ffmpeg.wasm. Note: removed single quotes around style.
+    const filter = `subtitles=subs.srt:fontsdir=.:force_style=${style}`;
     
     await ffmpegInstance.exec([
       '-i', 'input.mp4',
+      '-map', '0:v:0',        // Explicitly map first video stream
+      '-map', '0:a?',        // Explicitly map audio if it exists
       '-vf', filter,
       '-c:v', 'libx264',
       '-preset', 'ultrafast', 
