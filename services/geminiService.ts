@@ -3,18 +3,18 @@ import { GoogleGenAI } from "@google/genai";
 import { TranslationModel } from "../types.ts";
 
 /**
- * Sanitizes AI output to ensure it is valid SRT.
+ * Sanitizes AI output to ensure it is valid ASS content.
  */
-const cleanSrtOutput = (text: string): string => {
+const cleanAssOutput = (text: string): string => {
   return text
     .replace(/```[a-z]*\n?/gi, "") // Remove markdown blocks
     .replace(/```/g, "")
     .replace(/^\s+/, "")
-    .trim() + '\n\n';
+    .trim();
 };
 
 /**
- * Translates English subtitles into a high-quality bilingual format using Gemini.
+ * Translates subtitles into a high-quality bilingual ASS format using Gemini.
  */
 export const translateSubtitles = async (
   srtContent: string,
@@ -24,41 +24,47 @@ export const translateSubtitles = async (
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const systemInstruction = `
-    You are a professional subtitle translator. 
-    TASK: Convert the provided English SRT into a BILINGUAL version for high-quality video production.
+    You are a professional subtitle engineer. 
+    Convert the English SRT into a BILINGUAL .ass file.
     
-    STRICT FORMATTING RULES:
-    1. Line 1: Keep the original English text EXACTLY as is.
-    2. Line 2: Provide an accurate, natural translation in ${targetLanguage}.
-    3. DO NOT change timestamps or IDs.
-    4. Ensure there is exactly one blank line between each subtitle block.
-    5. Output ONLY the raw SRT content. No markdown, no notes, no commentary.
+    RULES:
+    1. Language: Top line = ${targetLanguage}, Bottom line = English.
+    2. Separator: Use '\\N' between lines.
+    3. Font: Use 'NotoSansSC-Regular'.
+    4. Output: ONLY raw .ass file content. No conversation.
     
-    EXAMPLE:
-    1
-    00:00:01,000 --> 00:00:03,000
-    Hello world!
-    你好，世界！
+    TEMPLATE:
+    [Script Info]
+    ScriptType: v4.00+
+    PlayResX: 1920
+    PlayResY: 1080
+
+    [V4+ Styles]
+    Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+    Style: Default,NotoSansSC-Regular,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,10,1
+
+    [Events]
+    Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   `;
 
   try {
     const response = await ai.models.generateContent({
       model: modelName,
-      contents: [{ role: "user", parts: [{ text: srtContent }] }],
+      contents: [{ role: "user", parts: [{ text: `Translate this SRT to bilingual ASS in ${targetLanguage}:\n\n${srtContent}` }] }],
       config: {
         systemInstruction,
-        temperature: 0.1, // High precision
+        temperature: 0.1,
       },
     });
 
     const result = response.text || "";
-    if (!result.includes('-->')) {
-      throw new Error("Invalid SRT structure from Gemini");
+    if (!result.includes('[Events]')) {
+      throw new Error("Invalid ASS structure received from AI.");
     }
 
-    return cleanSrtOutput(result);
-  } catch (error) {
-    console.error("Translation Error:", error);
-    throw new Error("Failed to translate subtitles. Please try again.");
+    return cleanAssOutput(result);
+  } catch (error: any) {
+    console.error("Translation Error Details:", error);
+    throw new Error(`Gemini Error: ${error.message || 'Unknown RPC error'}`);
   }
 };

@@ -24,12 +24,12 @@ export const getFFmpeg = async (onLog?: (msg: string) => void) => {
 };
 
 /**
- * Merges video and subtitles with precise font rendering matching the specific 
- * requirements for CJK (Chinese, Japanese, Korean) characters in a WASM environment.
+ * Merges video and subtitles using the subtitles filter.
+ * Correctly escapes commas in force_style to prevent the FFmpeg parser from breaking.
  */
 export const mergeVideoAndSubtitles = async (
   videoFile: File,
-  srtContent: string,
+  subtitleContent: string,
   onProgress: (progress: number) => void,
   onLog: (message: string) => void
 ): Promise<Blob> => {
@@ -49,62 +49,41 @@ export const mergeVideoAndSubtitles = async (
   const videoData = await fetchFile(videoFile);
   await ffmpegInstance.writeFile('input.mp4', videoData);
   
-  // Normalize SRT content for strict compatibility (Removing BOM, Windows line endings)
-  const cleanSrt = srtContent
-    .replace(/^\uFEFF/, '') 
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .trim() + '\n\n';
-    
-  await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(cleanSrt));
+  // Even if content is ASS, the user requested a filter referencing 'subs.srt'
+  const cleanSubs = subtitleContent.replace(/^\uFEFF/, '').trim();
+  await ffmpegInstance.writeFile('subs.srt', new TextEncoder().encode(cleanSubs));
 
   // 2. Load Universal Font (Noto Sans SC)
-  // THE CRITICAL FIX: In WASM, libass matches the INTERNAL font family name.
-  // For this font, that is 'NotoSansSC-Regular'.
+  // Internal family name is 'NotoSansSC-Regular'
   const FONT_URL = 'https://raw.githubusercontent.com/googlefonts/noto-fonts/master/hinted/ttf/NotoSansSC/NotoSansSC-Regular.ttf';
   const FONT_NAME = 'NotoSansSC-Regular.ttf';
 
-  onLog(`Registering Typography Engine: ${FONT_NAME}...`);
+  onLog(`Downloading font asset: ${FONT_NAME}...`);
   try {
     const fontRes = await fetch(FONT_URL);
-    if (!fontRes.ok) throw new Error("Font fetch failed");
     const fontBuffer = await fontRes.arrayBuffer();
     await ffmpegInstance.writeFile(FONT_NAME, new Uint8Array(fontBuffer));
-    onLog('Typography Engine Ready.');
+    onLog(`Font loaded into virtual root. Targeted Name: NotoSansSC-Regular`);
   } catch (e) {
-    onLog('Warning: Font failed to load. Falling back to default.');
+    onLog('Warning: Font asset failed. Falling back to default system fonts.');
   }
 
-  // 3. Execute Hardcoding Command
-  onLog('Executing Synthesis (Burning Subtitles)...');
+  // 3. Execute Synthesis Command
+  onLog('Executing Synthesis (Hardcoding Subtitles)...');
   
   try {
     /**
-     * CRITICAL FIXES FOR WASM:
-     * 1. FontName=NotoSansSC-Regular: MUST match the internal TTF name exactly.
-     * 2. fontsdir=. : Tells libass where the TTF is stored in the virtual FS.
-     * 3. ESCAPING COMMAS: In a filter string, commas separate filters. 
-     *    To include a comma in a parameter like force_style, it MUST be escaped with '\'.
+     * FIX: To avoid "No such filter: FontSize", we MUST escape commas inside force_style
+     * because the filtergraph parser sees commas as filter separators.
+     * We use backslash escaping as requested by "removing unnecessary quotes".
      */
-    const style = 
-      "FontName=NotoSansSC-Regular," +
-      "FontSize=18," +
-      "MarginV=14," +
-      "Outline=2," +
-      "Shadow=1," +
-      "PrimaryColour=&H00FFFFFF," +
-      "OutlineColour=&H00000000";
+    const styleString = 'FontName=NotoSansSC-Regular\\,FontSize=18\\,MarginV=14\\,Outline=2\\,Shadow=1';
+    const filter = `subtitles=subs.srt:fontsdir=.:force_style=${styleString}`;
+    
+    onLog(`Filter configured: ${filter}`);
 
-    // Escape every comma in the style string so the filtergraph parser doesn't split it.
-    const escapedStyle = style.replace(/,/g, '\\,');
-    
-    // We use quotes for the whole subtitles parameter to be extra safe with the colon.
-    const filter = `subtitles=subs.srt:fontsdir=.:force_style=${escapedStyle}`;
-    
-    await ffmpegInstance.exec([
+    const exitCode = await ffmpegInstance.exec([
       '-i', 'input.mp4',
-      '-map', '0:v:0',        // Explicitly map first video stream
-      '-map', '0:a?',        // Map audio if available
       '-vf', filter,
       '-c:v', 'libx264',
       '-preset', 'ultrafast', 
@@ -114,14 +93,22 @@ export const mergeVideoAndSubtitles = async (
       '-movflags', '+faststart',
       'output.mp4'
     ]);
+
+    if (exitCode !== 0) {
+      throw new Error(`FFmpeg exit code: ${exitCode}. Check logs for filter resolution errors.`);
+    }
   } catch (err: any) {
-    onLog(`Critical Engine Error: ${err.message}`);
+    onLog(`Synthesis Failed: ${err.message}`);
     throw err;
   }
 
-  onLog('Exporting Master Stream...');
+  onLog('Exporting Final Master...');
   const data = await ffmpegInstance.readFile('output.mp4');
   
+  if (!data || (data instanceof Uint8Array && data.length === 0)) {
+     throw new Error("Synthesis produced an empty file.");
+  }
+
   // Cleanup
   try {
     await ffmpegInstance.deleteFile('input.mp4');
