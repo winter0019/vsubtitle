@@ -30,7 +30,7 @@ export const translateSubtitles = async (
     RULES:
     1. Language: Top line = ${targetLanguage}, Bottom line = English.
     2. Separator: Use '\\N' between lines.
-    3. Font: Use 'NotoSansSC-Regular'.
+    3. Font: You MUST use 'NotoSansSC-Regular' as the primary font name in Styles.
     4. Output: ONLY raw .ass file content. No conversation.
     
     TEMPLATE:
@@ -41,7 +41,7 @@ export const translateSubtitles = async (
 
     [V4+ Styles]
     Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-    Style: Default,NotoSansSC-Regular,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,10,1
+    Style: Default,NotoSansSC-Regular,22,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,20,1
 
     [Events]
     Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
