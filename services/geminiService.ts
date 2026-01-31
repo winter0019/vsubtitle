@@ -14,12 +14,19 @@ const cleanAssOutput = (text: string): string => {
 };
 
 /**
+ * Delay helper for retries.
+ */
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
  * Translates subtitles into a high-quality bilingual ASS format using Gemini.
+ * Includes retry logic for 503/429 errors.
  */
 export const translateSubtitles = async (
   srtContent: string,
   targetLanguage: string,
-  modelName: TranslationModel = TranslationModel.GEMINI_FLASH
+  modelName: TranslationModel = TranslationModel.GEMINI_FLASH,
+  onRetry?: (attempt: number) => void
 ): Promise<string> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
@@ -47,24 +54,47 @@ export const translateSubtitles = async (
     Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: modelName,
-      contents: [{ role: "user", parts: [{ text: `Translate this SRT to bilingual ASS in ${targetLanguage}:\n\n${srtContent}` }] }],
-      config: {
-        systemInstruction,
-        temperature: 0.1,
-      },
-    });
+  let lastError: any = null;
+  const maxRetries = 3;
 
-    const result = response.text || "";
-    if (!result.includes('[Events]')) {
-      throw new Error("Invalid ASS structure received from AI.");
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        onRetry?.(attempt);
+        // Exponential backoff: 1s, 2s, 4s
+        await sleep(Math.pow(2, attempt - 1) * 1000);
+      }
+
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: [{ role: "user", parts: [{ text: `Translate this SRT to bilingual ASS in ${targetLanguage}:\n\n${srtContent}` }] }],
+        config: {
+          systemInstruction,
+          temperature: 0.1,
+        },
+      });
+
+      const result = response.text || "";
+      if (!result.includes('[Events]')) {
+        throw new Error("Invalid ASS structure received from AI.");
+      }
+
+      return cleanAssOutput(result);
+    } catch (error: any) {
+      lastError = error;
+      const isRetryable = error.message?.includes('503') || error.message?.includes('429') || error.message?.includes('overloaded');
+      
+      if (!isRetryable || attempt === maxRetries) {
+        break;
+      }
+      console.warn(`Gemini attempt ${attempt + 1} failed (Retryable):`, error.message);
     }
-
-    return cleanAssOutput(result);
-  } catch (error: any) {
-    console.error("Translation Error Details:", error);
-    throw new Error(`Gemini Error: ${error.message || 'Unknown RPC error'}`);
   }
+
+  console.error("Translation Final Failure:", lastError);
+  const userFriendlyMsg = lastError.message?.includes('503') 
+    ? "The AI model is currently overloaded. Please wait a moment and click 'Retry Synthesis'." 
+    : `Gemini Error: ${lastError.message || 'Unknown RPC error'}`;
+    
+  throw new Error(userFriendlyMsg);
 };

@@ -40,7 +40,7 @@ const App: React.FC = () => {
     if (
       videoFile && 
       originalSrtContent && 
-      (status.step === 'idle' || status.step === 'error') && 
+      (status.step === 'idle') && 
       currentKey !== lastProcessedKey.current
     ) {
       lastProcessedKey.current = currentKey;
@@ -128,7 +128,15 @@ const App: React.FC = () => {
       
       let assContent = '';
       try {
-        assContent = await translateSubtitles(originalSrtContent, targetLanguage);
+        assContent = await translateSubtitles(
+          originalSrtContent, 
+          targetLanguage, 
+          TranslationModel.GEMINI_FLASH,
+          (attempt) => {
+            addLog(`Retry Attempt ${attempt}: Gemini is busy, waiting...`);
+            setStatus(prev => ({ ...prev, message: `Busy: Retry Attempt ${attempt}/3...` }));
+          }
+        );
         setBilingualAss(assContent);
         addLog('Bilingual ASS content generated successfully.');
       } catch (geminiError: any) {
@@ -280,22 +288,33 @@ const App: React.FC = () => {
                 <div className={`glass-card p-10 relative overflow-hidden shadow-2xl ${status.step === 'error' ? 'ring-2 ring-red-500/50' : 'ring-1 ring-white/10'}`}>
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mb-8">
                     <div className="flex items-center gap-6">
-                      <div className={`w-16 h-16 rounded-3xl flex items-center justify-center border ${status.step === 'error' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-sky-500/10 text-sky-400 border-sky-500/20'}`}>
+                      <div className={`w-16 h-16 rounded-3xl flex items-center justify-center border ${status.step === 'error' ? 'bg-red-500/10 text-red-400 border-red-500/20' : (status.message.includes('Busy') ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-sky-500/10 text-sky-400 border-sky-500/20')}`}>
                         <i className={`fas ${status.step === 'error' ? 'fa-exclamation-triangle' : (status.step === 'merging' ? 'fa-microchip' : 'fa-brain')} ${status.step === 'completed' || status.step === 'error' ? '' : 'fa-spin'} text-3xl`}></i>
                       </div>
-                      <div>
-                        <h4 className={`text-3xl font-black tracking-tight ${status.step === 'error' ? 'text-red-400' : 'text-white'}`}>{status.message}</h4>
+                      <div className="flex-1">
+                        <h4 className={`text-2xl md:text-3xl font-black tracking-tight ${status.step === 'error' ? 'text-red-400' : 'text-white'}`}>{status.message}</h4>
                         <p className="text-[10px] uppercase font-bold text-slate-500 tracking-widest mt-1">Status: {status.step}</p>
                       </div>
                     </div>
-                    <span className={`text-6xl font-black italic tabular-nums ${status.step === 'error' ? 'text-red-500' : 'text-sky-400'}`}>{status.progress}%</span>
+                    <span className={`text-6xl font-black italic tabular-nums ${status.step === 'error' ? 'text-red-500' : (status.message.includes('Busy') ? 'text-amber-500' : 'text-sky-400')}`}>{status.progress}%</span>
                   </div>
                   <div className="h-4 bg-black/50 rounded-full overflow-hidden p-1 border border-white/5">
                     <div 
-                      className={`h-full rounded-full transition-all duration-700 ease-out ${status.step === 'error' ? 'bg-red-500' : 'bg-sky-500 shadow-[0_0_20px_rgba(56,189,248,0.4)]'}`} 
+                      className={`h-full rounded-full transition-all duration-700 ease-out ${status.step === 'error' ? 'bg-red-500' : (status.message.includes('Busy') ? 'bg-amber-500' : 'bg-sky-500 shadow-[0_0_20px_rgba(56,189,248,0.4)]')}`} 
                       style={{ width: `${status.progress}%` }}
                     ></div>
                   </div>
+
+                  {status.step === 'error' && (
+                    <div className="mt-8 flex flex-col sm:flex-row gap-4 animate-in fade-in duration-500">
+                      <button 
+                        onClick={processWorkflow}
+                        className="flex-1 bg-red-500 hover:bg-red-400 text-white font-black py-4 rounded-xl text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95"
+                      >
+                        <i className="fas fa-sync-alt mr-2"></i> Retry Synthesis
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {bilingualAss && (
@@ -311,7 +330,7 @@ const App: React.FC = () => {
 
                 <div className="bg-black/80 rounded-[2rem] p-8 h-64 overflow-y-auto font-mono text-[11px] text-slate-500 custom-scrollbar border border-white/5 shadow-inner">
                   {logs.map((log, i) => (
-                    <div key={i} className={`mb-1.5 leading-relaxed ${log.includes('ERROR') || log.includes('failed') ? 'text-red-500 font-bold' : ''}`}>
+                    <div key={i} className={`mb-1.5 leading-relaxed ${log.includes('ERROR') || log.includes('failed') ? 'text-red-500 font-bold' : (log.includes('Retry') ? 'text-amber-400 italic' : '')}`}>
                       {log}
                     </div>
                   ))}
